@@ -1,0 +1,47 @@
+{
+  "name": "aspyn",
+  "description": "Scriptable, config-driven watch pipelines.",
+  "keywords": [
+    "watch",
+    "monitor",
+    "pipeline",
+    "scheduler",
+    "daemon",
+    "cron",
+    "automation",
+    "alerting",
+    "notifications",
+    "scraping",
+    "cli",
+    "jsonc",
+    "config-driven",
+    "scriptable",
+    "unix"
+  ],
+  "author": "luke@lpdev.io",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "bin": {
+    "aspyn": "./dist/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-notifier": "^8.0.5",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "jsonc-parser": "^3.3.1",
+    "jsonpath-plus": "^10.4.0",
+    "node-cron": "^4.2.1",
+    "node-notifier": "^10.0.1"
+  }
+}
