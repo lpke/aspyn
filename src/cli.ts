@@ -2,15 +2,13 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import cron from "node-cron";
-
 import { runWatch } from "./runner.js";
-import { loadGlobalConfig, loadWatchConfig, discoverWatches } from "./config/loader.js";
+import { loadWatchConfig, discoverWatches } from "./config/loader.js";
 import { validateWatchConfig } from "./config/validator.js";
 import { getWatchDir, getActionLogPath, getStateHistoryPath } from "./config/paths.js";
 import { loadState } from "./state/manager.js";
-import { cleanStaleLocks, releaseLock } from "./state/lock.js";
-import { clampInterval, shorthandToCron, intervalToMs } from "./scheduling/interval.js";
+import { intervalToMs } from "./scheduling/interval.js";
+import { cmdDaemon } from "./daemon.js";
 import type { PipelineResult } from "./types/pipeline.js";
 
 // ── Arg parsing ─────────────────────────────────────────────────────
@@ -100,143 +98,7 @@ async function cmdRun(): Promise<void> {
   }
 }
 
-async function cmdDaemon(): Promise<void> {
-  // 1. Clean stale locks
-  const cleaned = await cleanStaleLocks();
-  for (const name of cleaned) {
-    console.error(`Cleaned stale lock for "${name}"`);
-  }
 
-  // 2. Load global config
-  const globalConfig = await loadGlobalConfig();
-  const shutdownTimeout = (globalConfig.shutdownTimeout ?? 30) * 1000;
-
-  // 3. Track scheduled tasks and in-progress runs
-  const tasks = new Map<string, cron.ScheduledTask>();
-  const inProgress = new Set<string>();
-
-  async function scheduleWatch(name: string): Promise<void> {
-    try {
-      const config = await loadWatchConfig(name);
-      validateWatchConfig(config, name);
-      config.interval = clampInterval(config.interval, globalConfig.minInterval ?? "10s");
-      const expression = shorthandToCron(config.interval);
-
-      // Check for overdue run
-      const missedPolicy = config.missedRunPolicy ?? globalConfig.missedRunPolicy ?? "skip";
-      const state = await loadState(name);
-      if (state.lastRun) {
-        const elapsed = Date.now() - new Date(state.lastRun).getTime();
-        const intervalMs = intervalToMs(config.interval);
-        if (elapsed > intervalMs * 2) {
-          if (missedPolicy === "run_once" || missedPolicy === "run_all") {
-            console.error(`[${name}] Overdue — running now (policy: ${missedPolicy})`);
-            inProgress.add(name);
-            try {
-              await runWatch(name);
-            } catch (err) {
-              console.error(`[${name}] Overdue run failed: ${(err as Error).message}`);
-            } finally {
-              inProgress.delete(name);
-            }
-          }
-        }
-      }
-
-      const task = cron.schedule(expression, async () => {
-        if (inProgress.has(name)) return;
-        inProgress.add(name);
-        try {
-          // Re-read config on each tick (loader reads fresh)
-          const result = await runWatch(name);
-          const status = result.skipped ? "skipped" : result.success ? "ok" : "error";
-          console.error(`[${name}] ${status}`);
-        } catch (err) {
-          console.error(`[${name}] error: ${(err as Error).message}`);
-        } finally {
-          inProgress.delete(name);
-        }
-      });
-
-      tasks.set(name, task);
-    } catch (err) {
-      console.error(`[${name}] Failed to schedule: ${(err as Error).message}`);
-    }
-  }
-
-  // 4. Discover and schedule all watches
-  const watches = await discoverWatches();
-  for (const name of watches) {
-    await scheduleWatch(name);
-  }
-
-  console.error(`aspyn daemon started. Watching ${tasks.size} watches.`);
-
-  // 5. Discovery sweep every 60 seconds
-  const discoveryInterval = setInterval(async () => {
-    const current = await discoverWatches();
-    const currentSet = new Set(current);
-
-    // Schedule new watches
-    for (const name of current) {
-      if (!tasks.has(name)) {
-        console.error(`[${name}] New watch discovered — scheduling.`);
-        await scheduleWatch(name);
-      }
-    }
-
-    // Remove deleted watches
-    for (const [name, task] of tasks) {
-      if (!currentSet.has(name)) {
-        console.error(`[${name}] Watch removed — stopping.`);
-        task.stop();
-        tasks.delete(name);
-      }
-    }
-  }, 60_000);
-
-  // 6. Graceful shutdown
-  let shuttingDown = false;
-
-  async function shutdown(): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
-
-    console.error("Shutting down...");
-
-    clearInterval(discoveryInterval);
-
-    // Stop all cron schedules
-    for (const [, task] of tasks) {
-      task.stop();
-    }
-
-    // Wait for in-progress runs
-    if (inProgress.size > 0) {
-      console.error(`Waiting for ${inProgress.size} in-progress run(s)...`);
-      const deadline = Date.now() + shutdownTimeout;
-      while (inProgress.size > 0 && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 250));
-      }
-      if (inProgress.size > 0) {
-        console.error(`Timed out waiting for: ${[...inProgress].join(", ")}`);
-      }
-    }
-
-    // Release all locks
-    const allWatches = await discoverWatches();
-    for (const name of allWatches) {
-      try {
-        await releaseLock(name);
-      } catch { /* best effort */ }
-    }
-
-    process.exit(0);
-  }
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-}
 
 async function cmdList(): Promise<void> {
   const watches = await discoverWatches();
