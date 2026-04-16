@@ -84,6 +84,12 @@ export async function runWatch(
 
 // ── runAllWatches ───────────────────────────────────────────────────
 
+/**
+ * Programmatic API for running all watches sequentially.
+ * Not used by the CLI (cli.ts inlines its own loop with per-watch timing and --all flag handling).
+ * Exported as a public convenience for external consumers or scripts that import aspyn as a library.
+ * Do not remove or refactor into the CLI — the separation is intentional.
+ */
 export async function runAllWatches(
   options?: RunOptions,
 ): Promise<Map<string, PipelineResult>> {
