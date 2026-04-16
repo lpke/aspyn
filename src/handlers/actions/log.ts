@@ -3,14 +3,19 @@ import path from "node:path";
 import type { LogActionInput } from "../../types/config.js";
 import type { PipelineContext } from "../../types/pipeline.js";
 import { getActionLogPath } from "../../config/paths.js";
+import { rotateIfNeeded } from "../../logger.js";
 
 export async function logAction(
   input: LogActionInput,
   context: PipelineContext,
   watchName: string,
+  maxFileSize?: string,
+  maxFiles?: number,
 ): Promise<void> {
   const logPath = getActionLogPath(watchName);
   await fs.mkdir(path.dirname(logPath), { recursive: true });
+
+  await rotateIfNeeded(logPath, maxFileSize ?? "5mb", maxFiles ?? 5);
 
   const format = input.format ?? "json";
   let line: string;

@@ -1,10 +1,12 @@
 import { JSONPath } from "jsonpath-plus";
 import type { JsonParseInput } from "../../types/config.js";
 import type { StepOutput } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
 export async function jsonParse(
   input: JsonParseInput,
   data: StepOutput,
+  _log?: Logger,
 ): Promise<StepOutput> {
   const target =
     data.body !== undefined && typeof data.body === "object" && data.body !== null

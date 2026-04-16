@@ -1,7 +1,8 @@
 import type { HttpSourceInput } from "../../types/config.js";
 import type { StepOutput } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
-export async function httpSource(input: HttpSourceInput): Promise<StepOutput> {
+export async function httpSource(input: HttpSourceInput, _log?: Logger): Promise<StepOutput> {
   const { url, method = "GET", headers, body } = input;
 
   const init: RequestInit = { method };

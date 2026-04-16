@@ -1,6 +1,7 @@
 import type { PipelineContext } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
-export function exprCheck(expression: string, context: PipelineContext): boolean {
+export function exprCheck(expression: string, context: PipelineContext, _log?: Logger): boolean {
   try {
     // eslint-disable-next-line no-new-func
     const fn = new Function(

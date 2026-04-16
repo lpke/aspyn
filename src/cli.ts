@@ -3,13 +3,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runWatch } from "./runner.js";
+import type { RunResult } from "./runner.js";
 import { loadWatchConfig, discoverWatches } from "./config/loader.js";
 import { validateWatchConfig } from "./config/validator.js";
-import { getWatchDir, getActionLogPath, getStateHistoryPath } from "./config/paths.js";
+import { getWatchDir, getActionLogPath, getRunLogPath, getStateHistoryPath } from "./config/paths.js";
 import { loadState } from "./state/manager.js";
 import { intervalToMs } from "./scheduling/interval.js";
 import { cmdDaemon } from "./daemon.js";
-import type { PipelineResult } from "./types/pipeline.js";
+import { output } from "./output.js";
 
 // ── Arg parsing ─────────────────────────────────────────────────────
 
@@ -21,26 +22,8 @@ function hasFlag(name: string): boolean {
 }
 
 function positional(index: number): string | undefined {
-  // positional args are non-flag args after subcommand
   const positionals = args.slice(1).filter((a) => !a.startsWith("--"));
   return positionals[index];
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function padRight(str: string, len: number): string {
-  return str.length >= len ? str : str + " ".repeat(len - str.length);
-}
-
-function printTable(headers: string[], rows: string[][]): void {
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)),
-  );
-  console.log(headers.map((h, i) => padRight(h, widths[i])).join("  "));
-  console.log(widths.map((w) => "-".repeat(w)).join("  "));
-  for (const row of rows) {
-    console.log(row.map((c, i) => padRight(c, widths[i])).join("  "));
-  }
 }
 
 // ── Subcommands ─────────────────────────────────────────────────────
@@ -53,18 +36,27 @@ async function cmdRun(): Promise<void> {
 
   if (name) {
     const start = Date.now();
+    let result: RunResult;
     try {
-      const result = await runWatch(name, { verbose, dryRun });
-      const status = result.skipped ? "skipped" : result.success ? "ok" : "error";
-      const duration = `${Date.now() - start}ms`;
-      printTable(["NAME", "STATUS", "DURATION"], [[name, status, duration]]);
-      if (!result.success && !result.skipped) process.exit(1);
+      result = await runWatch(name, { dryRun });
     } catch (err) {
-      const duration = `${Date.now() - start}ms`;
-      printTable(["NAME", "STATUS", "DURATION"], [[name, "error", duration]]);
-      console.error((err as Error).message);
-      process.exit(1);
+      result = { success: false, value: null, error: (err as Error).message, skipped: false };
     }
+    const elapsed = Date.now() - start;
+    const status = result.skipped ? "skipped" : result.success ? "ok" : "error";
+    output.markExternalOutput();
+
+    const blockOpts: Parameters<typeof output.printWatchBlock>[1] = {};
+    if (result.dryRunActions) blockOpts.dryRunActions = result.dryRunActions;
+    if (verbose) blockOpts.result = result;
+    if (!result.success && !result.skipped && !verbose) blockOpts.error = result.error ?? undefined;
+
+    if (blockOpts.dryRunActions || blockOpts.result || blockOpts.error) {
+      output.printWatchBlock(name, blockOpts);
+    }
+
+    output.printSummaryTable([{ name, status, duration: `${elapsed}ms` }]);
+    if (!result.success && !result.skipped) process.exit(1);
   } else if (!all) {
     console.log(`Usage: aspyn run <name> [--verbose] [--dry]`);
     console.log(`       aspyn run --all [--verbose] [--dry]`);
@@ -72,15 +64,22 @@ async function cmdRun(): Promise<void> {
     return;
   } else {
     const watches = await discoverWatches();
-    const rows: string[][] = [];
+    const rows: Array<{ name: string; status: string; duration: string }> = [];
     let failed = false;
     let totalMs = 0;
+    let first = true;
 
     for (const watchName of watches) {
+      if (!first) output.sectionGap();
+      first = false;
+
+      output.printWatchHeader(watchName);
+      output.markExternalOutput();
+
       const start = Date.now();
-      let result: PipelineResult;
+      let result: RunResult;
       try {
-        result = await runWatch(watchName, { verbose, dryRun });
+        result = await runWatch(watchName, { dryRun });
       } catch (err) {
         result = { success: false, value: null, error: (err as Error).message, skipped: false };
       }
@@ -88,21 +87,27 @@ async function cmdRun(): Promise<void> {
       totalMs += elapsed;
       const status = result.skipped ? "skipped" : result.success ? "ok" : "error";
       if (!result.success && !result.skipped) failed = true;
-      rows.push([watchName, status, `${elapsed}ms`]);
+      rows.push({ name: watchName, status, duration: `${elapsed}ms` });
+
+      const blockOpts: Parameters<typeof output.printWatchBlock>[1] = { showName: false };
+      if (result.dryRunActions) blockOpts.dryRunActions = result.dryRunActions;
+      if (verbose) blockOpts.result = result;
+      if (!result.success && !result.skipped && !verbose) blockOpts.error = result.error ?? undefined;
+
+      if (blockOpts.dryRunActions || blockOpts.result || blockOpts.error) {
+        output.printWatchBlock(watchName, blockOpts);
+      }
     }
 
-    printTable(["NAME", "STATUS", "DURATION"], rows);
-    const totalSec = (totalMs / 1000).toFixed(1);
-    console.log(`Total: ${totalSec}s`);
+    output.printSummaryTable(rows);
+    output.printTotalLine(totalMs);
     if (failed) process.exit(1);
   }
 }
 
-
-
 async function cmdList(): Promise<void> {
   const watches = await discoverWatches();
-  const rows: string[][] = [];
+  const rows: Array<{ name: string; interval: string; lastRun: string; status: string; nextRun: string }> = [];
 
   for (const name of watches) {
     const state = await loadState(name);
@@ -117,7 +122,7 @@ async function cmdList(): Promise<void> {
       : "never";
     const status = state.lastStatus;
 
-    let nextRun = "?";
+    let nextRun = "\u2014";
     if (state.lastRun && interval !== "?") {
       try {
         const ms = intervalToMs(interval);
@@ -126,19 +131,20 @@ async function cmdList(): Promise<void> {
       } catch { /* skip */ }
     }
 
-    rows.push([name, interval, lastRun, status, nextRun]);
+    rows.push({ name, interval, lastRun, status, nextRun });
   }
 
-  printTable(["NAME", "INTERVAL", "LAST RUN", "STATUS", "NEXT RUN"], rows);
+  output.printListTable(rows);
 }
 
 async function cmdLog(): Promise<void> {
   const name = positional(0);
   if (!name) {
-    console.error("Usage: aspyn log <name> [--state]");
+    console.error("Usage: aspyn log <name> [--action] [--state]");
     process.exit(1);
   }
 
+  const showAction = hasFlag("action");
   const showState = hasFlag("state");
 
   if (showState) {
@@ -155,27 +161,20 @@ async function cmdLog(): Promise<void> {
     }
 
     const lines = content.trimEnd().split("\n");
-    for (const line of lines) {
-      const entry = JSON.parse(line);
-      const ts = entry.timestamp;
-      const status = entry.status;
-      const runCount = entry.runCount;
-      const valueSummary = entry.value != null ? JSON.stringify(entry.value).slice(0, 80) : "null";
-      let out = `[${ts}] status=${status} runCount=${runCount} value=${valueSummary}`;
-      if (entry.error) out += ` error=${entry.error}`;
-      console.log(out);
-    }
+    const entries = lines.map((line) => JSON.parse(line));
+    output.printStateHistory(entries);
     return;
   }
 
-  const logPath = getActionLogPath(name);
+  const logPath = showAction ? getActionLogPath(name) : getRunLogPath(name);
+  const label = showAction ? "action" : "run";
 
   let content: string;
   try {
     content = await fs.readFile(logPath, "utf-8");
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.log(`No logs for '${name}'`);
+      console.log(`No ${label} logs for '${name}'`);
       return;
     }
     throw err;
@@ -210,10 +209,10 @@ async function cmdValidate(): Promise<void> {
     try {
       const config = await loadWatchConfig(name);
       validateWatchConfig(config, name);
-      console.log(`✓ ${name} (ok)`);
+      output.printValidation(name, true);
     } catch (err) {
       anyInvalid = true;
-      console.log(`✗ ${name} (${(err as Error).message})`);
+      output.printValidation(name, false, (err as Error).message);
     }
   }
 
@@ -271,15 +270,16 @@ async function cmdInit(): Promise<void> {
   console.log(`Created ~/.config/aspyn/${name}/config.jsonc`);
 }
 
-function printHelp(): void {
-  console.log(`Usage: aspyn <command> [options]
+function printHelpCmd(): void {
+  output.printHelp(`Usage: aspyn <command> [options]
 
 Commands:
   aspyn run <name>           Run a single watch once, then exit
   aspyn run --all             Run all watches once, then exit
   aspyn daemon               Start the scheduler
   aspyn list                 List watches with status and next run time
-  aspyn log <name>                  Show a watch's log
+  aspyn log <name>                  Show a watch's run log
+  aspyn log <name> --action         Show data log (action log)
   aspyn log <name> --state          Show state history
   aspyn state <name>         Print current state for a watch
   aspyn validate             Validate all watch configs
@@ -308,11 +308,11 @@ async function main(): Promise<void> {
     case "--help":
     case "-h":
     case undefined:
-      printHelp();
+      printHelpCmd();
       return;
     default:
       console.error(`Unknown command: ${subcommand}`);
-      printHelp();
+      printHelpCmd();
       process.exit(1);
   }
 }

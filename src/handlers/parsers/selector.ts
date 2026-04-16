@@ -19,10 +19,12 @@ function extract($: CheerioAPI, selector: string, pseudo: string | null): string
   if (attrMatch) return $el.attr(attrMatch[1]) ?? null;
   return $el.text();
 }
+import type { Logger } from "../../logger.js";
 
 export async function selectorParse(
   input: SelectorParseInput,
   data: StepOutput,
+  _log?: Logger,
 ): Promise<StepOutput> {
   const html =
     typeof data.html === "string"

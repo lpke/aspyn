@@ -1,9 +1,11 @@
 import type { WebpageSourceInput, GlobalConfig } from "../../types/config.js";
 import type { StepOutput } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
 export async function webpageSource(
   input: WebpageSourceInput,
   playwrightConfig?: GlobalConfig["playwright"],
+  _log?: Logger,
 ): Promise<StepOutput> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pw: any;

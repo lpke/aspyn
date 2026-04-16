@@ -1,3 +1,7 @@
+import type { Logger } from "../logger.js";
+import { logger as globalLogger } from "../logger.js";
+
+
 // ── Interval parsing & scheduling utilities ─────────────────────────
 
 const SHORTHAND_RE = /^(\d+)(s|m|h|d)$/;
@@ -91,12 +95,13 @@ function extractStep(field: string, _range: number): number | null {
 
 // ── clampInterval ───────────────────────────────────────────────────
 
-export function clampInterval(input: string, minInterval: string): string {
+export function clampInterval(input: string, minInterval: string, log?: Logger): string {
+  const logger = log ?? globalLogger;
   const inputMs = intervalToMs(input);
   const minMs = intervalToMs(minInterval);
 
   if (inputMs < minMs) {
-    console.warn(
+    logger.warn(
       `Interval "${input}" (~${inputMs}ms) is below minimum "${minInterval}" (~${minMs}ms) — clamping.`,
     );
     return minInterval;

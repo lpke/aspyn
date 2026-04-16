@@ -8,6 +8,7 @@ import { cleanStaleLocks, releaseLock } from "./state/lock.js";
 import { clampInterval, shorthandToCron, intervalToMs } from "./scheduling/interval.js";
 import type { MissedRunPolicy } from "./types/config.js";
 import type { WatchState } from "./types/state.js";
+import { logger, createLogger } from "./logger.js";
 
 // ── Missed-run handling ─────────────────────────────────────────────
 
@@ -22,13 +23,15 @@ async function handleMissedRuns(
   const elapsed = Date.now() - new Date(state.lastRun).getTime();
   if (elapsed <= intervalMs) return;
 
+  const watchLog = createLogger({ prefix: name });
+
   if (policy === "skip") {
-    console.error(`[${name}] Overdue — skipping (policy: skip)`);
+    watchLog.info("Overdue — skipping (policy: skip)");
     return;
   }
 
   if (policy === "run_once") {
-    console.error(`[${name}] Overdue — running once (policy: run_once)`);
+    watchLog.info("Overdue — running once (policy: run_once)");
     await runWatch(name);
     return;
   }
@@ -37,9 +40,9 @@ async function handleMissedRuns(
     const missedCount = Math.floor(elapsed / intervalMs);
     const capped = Math.min(missedCount, 10);
     if (missedCount > 10) {
-      console.error(`[${name}] Overdue — ${missedCount} runs missed, capping at 10 (policy: run_all)`);
+      watchLog.info(`Overdue — ${missedCount} runs missed, capping at 10 (policy: run_all)`);
     } else {
-      console.error(`[${name}] Overdue — running ${capped} missed run(s) (policy: run_all)`);
+      watchLog.info(`Overdue — running ${capped} missed run(s) (policy: run_all)`);
     }
     for (let i = 0; i < capped; i++) {
       await runWatch(name);
@@ -53,7 +56,7 @@ export async function cmdDaemon(): Promise<void> {
   // 1. Clean stale locks
   const cleaned = await cleanStaleLocks();
   for (const name of cleaned) {
-    console.error(`Cleaned stale lock for "${name}"`);
+    logger.warn(`Cleaned stale lock for ${name}`);
   }
 
   // 2. Load global config
@@ -65,6 +68,7 @@ export async function cmdDaemon(): Promise<void> {
   const inProgressRuns = new Set<Promise<unknown>>();
 
   async function scheduleWatch(name: string): Promise<void> {
+    const watchLog = createLogger({ prefix: name });
     try {
       const config = await loadWatchConfig(name);
       validateWatchConfig(config, name);
@@ -75,7 +79,7 @@ export async function cmdDaemon(): Promise<void> {
       // Handle interrupted state (stale "running" from a crash)
       let state = await loadState(name);
       if (state.lastStatus === "running") {
-        console.error(`[${name}] Detected interrupted state — marking as interrupted`);
+        watchLog.info("Detected interrupted state — marking as interrupted");
         state = { ...state, lastStatus: "interrupted" };
         await saveState(name, state);
       }
@@ -92,9 +96,9 @@ export async function cmdDaemon(): Promise<void> {
           try {
             const result = await runWatch(name);
             const status = result.skipped ? "skipped" : result.success ? "ok" : "error";
-            console.error(`[${name}] ${status}`);
+            watchLog.info(status);
           } catch (err) {
-            console.error(`[${name}] error: ${(err as Error).message}`);
+            watchLog.error((err as Error).message);
           } finally {
             inProgressRuns.delete(promise);
             resolve!();
@@ -104,7 +108,7 @@ export async function cmdDaemon(): Promise<void> {
 
       tasks.set(name, task);
     } catch (err) {
-      console.error(`[${name}] Failed to schedule: ${(err as Error).message}`);
+      watchLog.error(`Failed to schedule: ${(err as Error).message}`);
     }
   }
 
@@ -114,7 +118,7 @@ export async function cmdDaemon(): Promise<void> {
     await scheduleWatch(name);
   }
 
-  console.error(`aspyn daemon started. Watching ${tasks.size} watches.`);
+  logger.info(`Daemon started. Watching ${tasks.size} watches.`);
 
   // 5. Discovery sweep every 60 seconds
   const discoveryInterval = setInterval(async () => {
@@ -123,14 +127,14 @@ export async function cmdDaemon(): Promise<void> {
 
     for (const name of current) {
       if (!tasks.has(name)) {
-        console.error(`New watch detected: ${name}`);
+        logger.info(`New watch detected: ${name}`);
         await scheduleWatch(name);
       }
     }
 
     for (const [name, task] of tasks) {
       if (!currentSet.has(name)) {
-        console.error(`Watch removed: ${name}`);
+        logger.info(`Watch removed: ${name}`);
         task.stop();
         tasks.delete(name);
       }
@@ -142,13 +146,12 @@ export async function cmdDaemon(): Promise<void> {
 
   async function shutdown(): Promise<void> {
     if (shuttingDown) {
-      // Second signal — force exit
-      console.error("Force exit.");
+      logger.error("Force exit.");
       process.exit(1);
     }
     shuttingDown = true;
 
-    console.error("Shutting down...");
+    logger.info("Shutting down...");
 
     // Stop accepting new runs
     clearInterval(discoveryInterval);
@@ -158,14 +161,14 @@ export async function cmdDaemon(): Promise<void> {
 
     // Wait for in-progress runs with timeout
     if (inProgressRuns.size > 0) {
-      console.error(`Waiting for ${inProgressRuns.size} in-progress run(s)...`);
+      logger.info(`Waiting for ${inProgressRuns.size} in-progress run(s)...`);
       const timeout = new Promise<void>((r) => setTimeout(r, shutdownTimeout));
       await Promise.race([
         Promise.allSettled([...inProgressRuns]),
         timeout,
       ]);
       if (inProgressRuns.size > 0) {
-        console.error(`Timed out waiting for ${inProgressRuns.size} run(s)`);
+        logger.warn(`Timed out waiting for ${inProgressRuns.size} run(s)`);
       }
     }
 

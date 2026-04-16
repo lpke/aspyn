@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
+import fss from "node:fs";
 
 import type { WatchState, StateHistoryEntry } from "../types/state.js";
 import type { PipelineResult } from "../types/pipeline.js";
 import { getStatePath, getWatchStateDir, getStateHistoryPath } from "../config/paths.js";
+import { rotateIfNeededSync } from "../logger.js";
 
 // ── Defaults ────────────────────────────────────────────────────────
 
@@ -72,6 +74,8 @@ export async function markComplete(
   watchName: string,
   state: WatchState,
   result: PipelineResult,
+  stateHistoryMaxFileSize: string = "5mb",
+  stateHistoryMaxFiles: number = 5,
 ): Promise<WatchState> {
   const updated: WatchState = {
     lastRun: new Date().toISOString(),
@@ -93,20 +97,23 @@ export async function markComplete(
     runCount: updated.runCount,
     error: result.error ?? null,
   };
-  await appendStateHistory(watchName, entry);
+  appendStateHistory(watchName, entry, stateHistoryMaxFileSize, stateHistoryMaxFiles);
 
   return updated;
 }
 
 
-export async function appendStateHistory(
+export function appendStateHistory(
   watchName: string,
   entry: StateHistoryEntry,
-): Promise<void> {
+  maxFileSize: string = "5mb",
+  maxFiles: number = 5,
+): void {
   const dir = getWatchStateDir(watchName);
-  await fs.mkdir(dir, { recursive: true });
+  fss.mkdirSync(dir, { recursive: true });
   const filePath = getStateHistoryPath(watchName);
-  await fs.appendFile(filePath, JSON.stringify(entry) + "\n", "utf-8");
+  rotateIfNeededSync(filePath, maxFileSize, maxFiles);
+  fss.appendFileSync(filePath, JSON.stringify(entry) + "\n", "utf-8");
 }
 
 export async function clearStateHistory(

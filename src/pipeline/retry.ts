@@ -1,4 +1,6 @@
 import type { RetryConfig } from "../types/config.js";
+import type { Logger } from "../logger.js";
+import { logger as globalLogger } from "../logger.js";
 import { intervalToMs } from "../scheduling/interval.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -27,8 +29,11 @@ function backoffMs(
 export async function withRetry<T>(
   fn: () => Promise<T>,
   retryConfig: RetryConfig | undefined,
+  log?: Logger,
 ): Promise<T> {
   if (!retryConfig) return fn();
+
+  const logger = log ?? globalLogger;
 
   const baseMs = intervalToMs(retryConfig.initialDelay);
   let lastError: unknown;
@@ -39,7 +44,9 @@ export async function withRetry<T>(
     } catch (err) {
       lastError = err;
       if (attempt < retryConfig.attempts) {
-        await sleep(backoffMs(attempt, baseMs, retryConfig.backoff));
+        const delay = backoffMs(attempt, baseMs, retryConfig.backoff);
+        logger.debug(`Retry ${attempt}/${retryConfig.attempts} in ${delay}ms...`);
+        await sleep(delay);
       }
     }
   }

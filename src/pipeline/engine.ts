@@ -12,6 +12,7 @@ import type {
   PipelineResult,
 } from "../types/pipeline.js";
 import type { WatchState } from "../types/state.js";
+import type { Logger } from "../logger.js";
 import { getWatchDir } from "../config/paths.js";
 import { execShell, parseJsonOutput } from "../execution/shell.js";
 import { resolveSource } from "../handlers/sources/resolve.js";
@@ -20,6 +21,7 @@ import { resolveCheck } from "../handlers/checks/resolve.js";
 import { exprCheck } from "../handlers/checks/expr.js";
 import { resolveAction } from "../handlers/actions/resolve.js";
 import { withRetry } from "./retry.js";
+import { logger as globalLogger } from "../logger.js";
 
 // ── Options ─────────────────────────────────────────────────────────
 
@@ -28,6 +30,7 @@ export interface PipelineOptions {
   config: WatchConfig;
   globalConfig: GlobalConfig;
   state: WatchState;
+  logger?: Logger;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -42,12 +45,17 @@ export async function runPipeline(
   options: PipelineOptions,
 ): Promise<PipelineResult> {
   const { watchName, config, globalConfig, state } = options;
+  const log = options.logger ?? globalLogger;
 
   const timeout = config.timeout ?? globalConfig.defaultTimeout ?? 30;
   const cwd = getWatchDir(watchName);
 
   try {
+    log.info("Pipeline started");
+
     // ── 1. Source ──────────────────────────────────────────────────
+
+    log.debug(`Source: ${config.source === undefined ? "none" : typeof config.source === "string" ? "shell" : (config.source as TypedSourceHandler).type}`);
 
     const sourceOutput: StepOutput = await withRetry(async () => {
       if (config.source === undefined) return {};
@@ -67,10 +75,15 @@ export async function runPipeline(
         cwd,
         timeout,
         globalConfig,
+        log,
       );
-    }, config.retry);
+    }, config.retry, log);
+
+    log.debug("Source complete");
 
     // ── 2. Parse ──────────────────────────────────────────────────
+
+    log.debug(`Parse: ${config.parse === undefined ? "passthrough" : typeof config.parse === "string" ? "shell" : (config.parse as TypedParseHandler).type}`);
 
     const parseOutput: StepOutput = await withRetry(async () => {
       if (config.parse === undefined) return sourceOutput;
@@ -90,8 +103,10 @@ export async function runPipeline(
         return parseJsonOutput(result.stdout) ?? { raw: result.stdout };
       }
 
-      return resolveParse(config.parse as TypedParseHandler, sourceOutput);
-    }, config.retry);
+      return resolveParse(config.parse as TypedParseHandler, sourceOutput, log);
+    }, config.retry, log);
+
+    log.debug("Parse complete");
 
     // ── 3. Build context ──────────────────────────────────────────
 
@@ -118,7 +133,7 @@ export async function runPipeline(
 
       if (typeof config.check === "string") {
         if (looksLikeBareExpression(config.check)) {
-          return !exprCheck(config.check, context);
+          return !exprCheck(config.check, context, log);
         }
 
         const result = await execShell({
@@ -130,10 +145,13 @@ export async function runPipeline(
         return result.exitCode !== 0;
       }
 
-      return !resolveCheck(config.check as TypedCheckHandler, context);
-    }, config.retry);
+      return !resolveCheck(config.check as TypedCheckHandler, context, log);
+    }, config.retry, log);
+
+    log.debug(`Check: ${shouldSkip ? "skip" : "pass"}`);
 
     if (shouldSkip) {
+      log.info("Pipeline finished \u2014 skipped");
       return { success: true, value: parseOutput, error: null, skipped: true };
     }
 
@@ -144,6 +162,8 @@ export async function runPipeline(
     )
       ? config.action
       : [config.action];
+
+    log.debug(`Actions: ${actions.length} action(s)`);
 
     for (const action of actions) {
       if (typeof action === "string") {
@@ -165,23 +185,40 @@ export async function runPipeline(
           cwd,
           watchName,
           timeout,
+          log,
+          config.log?.maxFileSize ?? globalConfig.log?.maxFileSize,
+          config.log?.maxFiles ?? globalConfig.log?.maxFiles,
         );
       }
+      log.debug(`Action complete: ${typeof action === "string" ? "shell" : (action as TypedActionHandler).type}`);
     }
 
     // ── 6. Success ────────────────────────────────────────────────
 
+    log.info("Pipeline finished \u2014 ok");
     return { success: true, value: parseOutput, error: null, skipped: false };
   } catch (err) {
     const errorMessage =
       err instanceof Error ? err.message : String(err);
 
+    log.error(`Pipeline failed: ${errorMessage}`);
+
     // ── onError handler ─────────────────────────────────────────
     if (config.onError !== undefined) {
       try {
-        await runOnError(config.onError, cwd, watchName, timeout, err);
+        log.info("onError handler fired");
+        await runOnError(
+          config.onError,
+          cwd,
+          watchName,
+          timeout,
+          err,
+          log,
+          config.log?.maxFileSize ?? globalConfig.log?.maxFileSize,
+          config.log?.maxFiles ?? globalConfig.log?.maxFiles,
+        );
       } catch {
-        // onError itself failed — swallow to avoid recursion.
+        // onError itself failed \u2014 swallow to avoid recursion.
       }
     }
 
@@ -197,6 +234,9 @@ async function runOnError(
   watchName: string,
   timeout: number,
   pipelineError: unknown,
+  log?: Logger,
+  maxFileSize?: string,
+  maxFiles?: number,
 ): Promise<void> {
   const errorMessage =
     pipelineError instanceof Error ? pipelineError.message : String(pipelineError);
@@ -233,6 +273,9 @@ async function runOnError(
       cwd,
       watchName,
       timeout,
+      log,
+      maxFileSize,
+      maxFiles,
     );
   }
 }

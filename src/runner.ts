@@ -1,16 +1,23 @@
 import type { PipelineResult } from "./types/pipeline.js";
+import type { TypedActionHandler } from "./types/config.js";
 import { loadGlobalConfig, loadWatchConfig, discoverWatches } from "./config/loader.js";
-import { validateWatchConfig } from "./config/validator.js";
 import { clampInterval } from "./scheduling/interval.js";
 import { acquireLock, releaseLock } from "./state/lock.js";
 import { loadState, markRunning, markComplete } from "./state/manager.js";
 import { runPipeline } from "./pipeline/engine.js";
+import { createLogger } from "./logger.js";
+import { getRunLogPath } from "./config/paths.js";
 
 // ── Options ─────────────────────────────────────────────────────────
 
 export interface RunOptions {
-  verbose?: boolean;
   dryRun?: boolean;
+}
+
+// ── Result ──────────────────────────────────────────────────────────
+
+export interface RunResult extends PipelineResult {
+  dryRunActions?: Array<string | TypedActionHandler>;
 }
 
 // ── runWatch ────────────────────────────────────────────────────────
@@ -18,63 +25,62 @@ export interface RunOptions {
 export async function runWatch(
   watchName: string,
   options?: RunOptions,
-): Promise<PipelineResult> {
-  const { verbose = false, dryRun = false } = options ?? {};
+): Promise<RunResult> {
+  const { dryRun = false } = options ?? {};
 
   // 1. Load configs
   const globalConfig = await loadGlobalConfig();
   const config = await loadWatchConfig(watchName);
 
-  // 2. Validate
-  validateWatchConfig(config, watchName);
-
-  // 3. Clamp interval
+  // 2. Clamp interval
   config.interval = clampInterval(
     config.interval,
     globalConfig.minInterval ?? "10s",
   );
 
+  // 3. Create watch-scoped logger
+  const watchLogger = createLogger({
+    prefix: watchName,
+    logFile: getRunLogPath(watchName),
+    maxFileSize: config.log?.maxFileSize ?? globalConfig.log?.maxFileSize ?? "5mb",
+    maxFiles: config.log?.maxFiles ?? globalConfig.log?.maxFiles ?? 5,
+  });
+
+  watchLogger.info("Run started");
+
   // 4. Acquire lock
   const locked = await acquireLock(watchName);
   if (!locked) {
-    console.warn(`[${watchName}] Lock held by another process — skipping.`);
+    watchLogger.warn("Lock held by another process — skipping.");
     return { success: true, value: null, error: null, skipped: true };
   }
 
   try {
     // 5. Load & mark running
     const state = await loadState(watchName);
+    watchLogger.debug("Lock acquired");
+    watchLogger.debug(`State loaded (run #${state.runCount + 1})`);
     if (!dryRun) await markRunning(watchName, state);
 
     // 6. Run pipeline
-    let result: PipelineResult;
+    let result: RunResult;
 
     if (dryRun) {
-      // Dry-run: source + parse + check only, skip actions.
-      // Run source + parse + check with a harmless no-op action
       const dryConfig = { ...config, action: "true" };
-      const dryResult = await runPipeline({ watchName, config: dryConfig, globalConfig, state });
+      const dryResult = await runPipeline({ watchName, config: dryConfig, globalConfig, state, logger: watchLogger });
       const actions = Array.isArray(config.action) ? config.action : [config.action];
-      if (dryResult.success && !dryResult.skipped) {
-        console.error(
-          `[${watchName}] Dry run: would execute ${actions.length} action(s):`,
-        );
-        for (const a of actions) {
-          console.error(`  - ${typeof a === "string" ? a : JSON.stringify(a)}`);
-        }
-      }
       result = { ...dryResult, skipped: true };
+      if (dryResult.success && !dryResult.skipped) {
+        result.dryRunActions = actions;
+      }
     } else {
-      result = await runPipeline({ watchName, config, globalConfig, state });
+      result = await runPipeline({ watchName, config, globalConfig, state, logger: watchLogger });
     }
 
     // 7. Mark complete
     if (!dryRun) await markComplete(watchName, state, result);
 
-    // 8. Verbose output
-    if (verbose) {
-      console.log(JSON.stringify(result, null, 2));
-    }
+    watchLogger.info(`Run complete — ${result.skipped ? "skipped" : result.success ? "ok" : "error"}`);
 
     return result;
   } finally {
@@ -84,17 +90,11 @@ export async function runWatch(
 
 // ── runAllWatches ───────────────────────────────────────────────────
 
-/**
- * Programmatic API for running all watches sequentially.
- * Not used by the CLI (cli.ts inlines its own loop with per-watch timing and --all flag handling).
- * Exported as a public convenience for external consumers or scripts that import aspyn as a library.
- * Do not remove or refactor into the CLI — the separation is intentional.
- */
 export async function runAllWatches(
   options?: RunOptions,
-): Promise<Map<string, PipelineResult>> {
+): Promise<Map<string, RunResult>> {
   const watches = await discoverWatches();
-  const results = new Map<string, PipelineResult>();
+  const results = new Map<string, RunResult>();
 
   for (const name of watches) {
     try {

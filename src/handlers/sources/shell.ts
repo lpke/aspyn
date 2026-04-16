@@ -1,11 +1,13 @@
 import { execShell } from "../../execution/shell.js";
 import type { ShellSourceInput } from "../../types/config.js";
 import type { StepOutput } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
 export async function shellSource(
   input: ShellSourceInput,
   cwd: string,
   timeout: number,
+  _log?: Logger,
 ): Promise<StepOutput> {
   const effectiveTimeout = input.timeout ?? timeout;
 

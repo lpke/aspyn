@@ -1,9 +1,11 @@
 import type { RegexParseInput } from "../../types/config.js";
 import type { StepOutput } from "../../types/pipeline.js";
+import type { Logger } from "../../logger.js";
 
 export async function regexParse(
   input: RegexParseInput,
   data: StepOutput,
+  _log?: Logger,
 ): Promise<StepOutput> {
   let source: string | undefined;
 
