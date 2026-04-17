@@ -4,13 +4,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { runWatch } from "./runner.js";
 import type { RunResult } from "./runner.js";
-import { loadWatchConfig, discoverWatches } from "./config/loader.js";
+import { loadWatchConfig, discoverWatches, loadGlobalConfig } from "./config/loader.js";
 import { validateWatchConfig } from "./config/validator.js";
 import { getWatchDir, getActionLogPath, getRunLogPath, getStateHistoryPath } from "./config/paths.js";
 import { loadState } from "./state/manager.js";
 import { intervalToMs } from "./scheduling/interval.js";
 import { cmdDaemon } from "./daemon.js";
 import { output } from "./output.js";
+import { logger, initGlobalLogger } from "./logger.js";
 
 // ── Arg parsing ─────────────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ function positional(index: number): string | undefined {
 // ── Subcommands ─────────────────────────────────────────────────────
 
 async function cmdRun(): Promise<void> {
+  const globalConfig = await loadGlobalConfig();
+  initGlobalLogger({ level: globalConfig.log?.level ?? "info" });
+
   const name = positional(0);
   const verbose = hasFlag("verbose");
   const dryRun = hasFlag("dry");
@@ -106,6 +110,9 @@ async function cmdRun(): Promise<void> {
 }
 
 async function cmdList(): Promise<void> {
+  const globalConfig = await loadGlobalConfig();
+  initGlobalLogger({ level: globalConfig.log?.level ?? "info" });
+
   const watches = await discoverWatches();
   const rows: Array<{ name: string; interval: string; lastRun: string; status: string; nextRun: string }> = [];
 
@@ -202,6 +209,9 @@ async function cmdState(): Promise<void> {
 }
 
 async function cmdValidate(): Promise<void> {
+  const globalConfig = await loadGlobalConfig();
+  initGlobalLogger({ level: globalConfig.log?.level ?? "info" });
+
   const watches = await discoverWatches();
   let anyInvalid = false;
 

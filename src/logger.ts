@@ -172,4 +172,15 @@ export function createLogger(options?: LoggerOptions): Logger {
 
 // Reads level from global config lazily. For now, default to "info".
 // The daemon/CLI can re-initialize if needed after loading global config.
-export const logger = createLogger();
+let current: Logger = createLogger();
+
+export const logger: Logger = {
+  debug: (...a) => current.debug(...a),
+  info:  (...a) => current.info(...a),
+  warn:  (...a) => current.warn(...a),
+  error: (...a) => current.error(...a),
+};
+
+export function initGlobalLogger(options: LoggerOptions): void {
+  current = createLogger(options);
+}

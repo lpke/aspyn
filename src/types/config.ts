@@ -113,7 +113,7 @@ export interface WatchConfig {
   retry?: RetryConfig;
   onError?: string | TypedActionHandler;
   missedRunPolicy?: MissedRunPolicy;
-  log?: { maxFileSize?: string; maxFiles?: number };
+  log?: { level?: "debug" | "info" | "warn" | "error"; maxFileSize?: string; maxFiles?: number };
   stateHistory?: { maxFileSize?: string; maxFiles?: number };
 }
 

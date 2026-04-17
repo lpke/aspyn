@@ -44,6 +44,7 @@ export async function runWatch(
     logFile: getRunLogPath(watchName),
     maxFileSize: config.log?.maxFileSize ?? globalConfig.log?.maxFileSize ?? "5mb",
     maxFiles: config.log?.maxFiles ?? globalConfig.log?.maxFiles ?? 5,
+    level: config.log?.level ?? globalConfig.log?.level ?? "info",
   });
 
   watchLogger.info("Run started");

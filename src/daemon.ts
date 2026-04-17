@@ -8,7 +8,7 @@ import { cleanStaleLocks, releaseLock } from "./state/lock.js";
 import { clampInterval, shorthandToCron, intervalToMs } from "./scheduling/interval.js";
 import type { MissedRunPolicy } from "./types/config.js";
 import type { WatchState } from "./types/state.js";
-import { logger, createLogger } from "./logger.js";
+import { logger, createLogger, initGlobalLogger } from "./logger.js";
 
 // ── Missed-run handling ─────────────────────────────────────────────
 
@@ -61,6 +61,7 @@ export async function cmdDaemon(): Promise<void> {
 
   // 2. Load global config
   const globalConfig = await loadGlobalConfig();
+  initGlobalLogger({ level: globalConfig.log?.level ?? "info" });
   const shutdownTimeout = (globalConfig.shutdownTimeout ?? 30) * 1000;
 
   // 3. Track scheduled tasks and in-progress runs
