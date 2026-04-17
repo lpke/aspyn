@@ -1,9 +1,8 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 
 import {
+  getDataDir,
   getLockPath,
-  getStateDir,
   getWatchStateDir,
 } from "../config/paths.js";
 
@@ -68,19 +67,22 @@ export async function releaseLock(watchName: string): Promise<void> {
 }
 
 export async function cleanStaleLocks(): Promise<string[]> {
-  const stateDir = getStateDir();
+  const dataDir = getDataDir();
   const cleaned: string[] = [];
 
-  let entries: string[];
+  let entries: import("node:fs").Dirent[];
   try {
-    entries = await fs.readdir(stateDir);
+    entries = await fs.readdir(dataDir, { withFileTypes: true });
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return cleaned;
     throw err;
   }
 
-  for (const name of entries) {
-    const lockPath = path.join(stateDir, name, "lock");
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const name = entry.name;
+    const lockPath = getLockPath(name);
 
     let raw: string;
     try {

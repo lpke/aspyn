@@ -17,12 +17,8 @@ export function getDataDir(): string {
     : path.join(home(), ".local", "share", "aspyn");
 }
 
-export function getStateDir(): string {
-  return path.join(getDataDir(), "state");
-}
-
-export function getLogDir(): string {
-  return path.join(getDataDir(), "logs");
+export function getWatchDataDir(name: string): string {
+  return path.join(getDataDir(), name);
 }
 
 export function getGlobalConfigPath(): string {
@@ -38,11 +34,11 @@ export function getWatchConfigPath(name: string): string {
 }
 
 export function getWatchStateDir(name: string): string {
-  return path.join(getStateDir(), name);
+  return path.join(getWatchDataDir(name), "state");
 }
 
 export function getWatchLogDir(name: string): string {
-  return path.join(getLogDir(), name);
+  return path.join(getWatchDataDir(name), "logs");
 }
 
 export function getStatePath(name: string): string {

@@ -1,6 +1,6 @@
 import type { StepOutput } from "./pipeline.js";
 
-// ── Persisted watch state (~/.local/share/aspyn/state/<name>/state.json) ──
+// ── Persisted watch state (~/.local/share/aspyn/<name>/state/state.json) ──
 
 export interface WatchState {
   lastRun: string | null;
