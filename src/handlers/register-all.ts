@@ -4,3 +4,7 @@ import "./regex.js";
 import "./expr.js";
 import "./webpage.js";
 import "./file.js";
+import "./http.js";
+import "./shell.js";
+import "./notification-desktop.js";
+import "./log.js";
