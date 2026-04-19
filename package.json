@@ -31,17 +31,21 @@
     "aspyn": "./dist/bin-stub.js"
   },
   "devDependencies": {
+    "@types/jexl": "^2.3.4",
     "@types/node": "^25.6.0",
     "@types/node-cron": "^3.0.11",
     "@types/node-notifier": "^8.0.5",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "AGPL-3.0-only",
   "dependencies": {
     "chalk": "^5.6.2",
     "cheerio": "^1.2.0",
+    "jexl": "^2.3.0",
     "jsonc-parser": "^3.3.1",
     "jsonpath-plus": "^10.4.0",
     "node-cron": "^4.2.1",
