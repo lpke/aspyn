@@ -1,6 +1,7 @@
 import { register, type HandlerContext } from "./registry.js";
 import { execShell, parseJsonOutput } from "../execution/shell.js";
 import { ENV_CONTEXT_FILE } from "../constants.js";
+import { parseDurationMs } from "../duration.js";
 
 register({
   name: "shell",
@@ -10,7 +11,7 @@ register({
     const opts =
       typeof input === "string"
         ? { command: input }
-        : (input as { command: string; timeout?: number });
+        : (input as { command: string; timeout?: string | number });
 
     const env: Record<string, string> = {};
     const ctxFile = process.env[ENV_CONTEXT_FILE];
@@ -18,11 +19,15 @@ register({
       env[ENV_CONTEXT_FILE] = ctxFile;
     }
 
+    const timeoutSecs = opts.timeout !== undefined
+      ? parseDurationMs(opts.timeout) / 1000
+      : undefined;
+
     const result = await execShell({
       command: opts.command,
       cwd: process.cwd(),
       stdin: JSON.stringify(ctx.input),
-      timeout: opts.timeout,
+      timeout: timeoutSecs,
       env,
     });
 

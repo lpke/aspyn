@@ -8,19 +8,20 @@ register({
       source?: string;
     };
 
-    const data = ctx.input as Record<string, unknown> | string;
+    const raw = ctx.input;
     let source: string | undefined;
 
-    if (typeof data === "string") {
-      source = data;
-    } else if (sourceKey !== undefined) {
-      const val = (data as Record<string, unknown>)[sourceKey];
-      if (typeof val === "string") source = val;
-    } else {
-      for (const key of ["body", "content", "stdout"] as const) {
-        if (typeof (data as Record<string, unknown>)[key] === "string") {
-          source = (data as Record<string, unknown>)[key] as string;
-          break;
+    if (typeof raw === "string") {
+      source = raw;
+    } else if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+      const data = raw as Record<string, unknown>;
+      if (sourceKey !== undefined) {
+        const val = data[sourceKey];
+        if (typeof val === "string") source = val;
+      } else {
+        for (const key of ["body", "content", "stdout"] as const) {
+          const val = data[key];
+          if (typeof val === "string") { source = val; break; }
         }
       }
     }

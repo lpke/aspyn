@@ -1,5 +1,6 @@
 import { register, type HandlerContext } from "./registry.js";
 import { DEFAULT_TIMEOUT_SECONDS } from "../constants.js";
+import { parseDurationMs } from "../duration.js";
 
 register({
   name: "webpage",
@@ -7,7 +8,7 @@ register({
     const { url, waitFor, timeout, javascript } = input as {
       url: string;
       waitFor?: string;
-      timeout?: number;
+      timeout?: string | number;
       javascript?: string;
     };
 
@@ -27,9 +28,8 @@ register({
       await page.goto(url);
 
       if (waitFor) {
-        await page.waitForSelector(waitFor, {
-          timeout: (timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000,
-        });
+        const waitTimeoutMs = timeout !== undefined ? parseDurationMs(timeout) : DEFAULT_TIMEOUT_SECONDS * 1000;
+        await page.waitForSelector(waitFor, { timeout: waitTimeoutMs });
       }
 
       if (javascript) {

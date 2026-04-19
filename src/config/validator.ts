@@ -1,6 +1,8 @@
 import type { PipelineConfig, GlobalConfig, StepObject, Step, RetrySpec, StateHistoryConfig } from "../types/config.js";
-import { HANDLER_TYPES, LOG_LEVELS, MISSED_RUN_POLICIES } from "../constants.js";
+import { HANDLER_TYPES, LOG_LEVELS, MISSED_RUN_POLICIES, DEFAULT_TIMEOUT_SECONDS } from "../constants.js";
 import { loadGlobalConfig, loadPipelineConfig, listPipelineNames } from "./loader.js";
+import { parseDurationMs } from "../duration.js";
+import { HANDLER_REQUIRED_INPUT } from "./handlerInputSchema.js";
 
 // ── Result types ────────────────────────────────────────────────────
 
@@ -25,6 +27,9 @@ function isObject(v: unknown): v is Record<string, unknown> {
 const VALID_HANDLER_TYPES = new Set<string>(HANDLER_TYPES);
 const VALID_BACKOFF = new Set(["fixed", "linear", "exponential"]);
 const DURATION_RE = /^\d+(?:\.\d+)?(?:ms|s|m|h|d)$/;
+const TEMPLATE_RE = /\$\{([^}]*)\}/g;
+const IDENT_CHAIN_RE = /\b(steps|prev|changed)\.([A-Za-z_][\w-]*)/g;
+const RESERVED_ROOTS = new Set(["input", "firstRun", "meta", "anyChanged"]);
 
 // ── Validation implementation ───────────────────────────────────────
 
@@ -208,10 +213,190 @@ export function validatePipeline(
     warn("ALL_PURE_STEPS", "All steps have sideEffect=false; pipeline may have no observable effect");
   }
 
-  // Steps without "track" on side-effect steps
-  for (const { step, index } of objectSteps) {
-    if (step.sideEffect === true && step.track === undefined) {
-      warn("UNTRACKED_SIDE_EFFECT", `Step "${step.name}" is a side-effect but has no "track" setting`, ["pipeline", String(index), "track"]);
+  // Steps without "track" on side-effect steps — removed (track defaults intelligently now)
+
+  // Pipeline retry unreachable
+  if (
+    cfg.retry &&
+    (objectSteps.length > 0 &&
+    objectSteps.every(({ step }) => step.continueOnError === true) ||
+    cfg.proceedOnError === true)
+  ) {
+    warn(
+      "PIPELINE_RETRY_UNREACHABLE",
+      "pipeline.retry is set but every step is covered by continueOnError/proceedOnError; pipeline retry will never trigger",
+      ["retry"],
+    );
+  }
+
+  // ── §14.2 lint warnings ──────────────────────────────────────────
+
+  // 2a. SIDE_EFFECT_TRACK
+  for (const { step, index: idx } of objectSteps) {
+    if (step.sideEffect === true && step.track === true) {
+      warn(
+        "SIDE_EFFECT_TRACK",
+        `step "${step.name}" sets sideEffect: true and track: true; side-effect steps are rarely meaningful to change-track`,
+        ["pipeline", String(idx)],
+      );
+    }
+  }
+
+  // 2b. NESTED_RETRY
+  if (cfg.retry && (cfg.retry as RetrySpec).attempts > 1) {
+    const offenders = objectSteps
+      .filter(({ step }) => step.retry && step.retry.attempts > 1)
+      .map(({ step }) => step.name);
+    if (offenders.length > 0) {
+      warn(
+        "NESTED_RETRY",
+        `pipeline.retry and step.retry are both enabled; failures in [${offenders.join(", ")}] retry per-step AND per-pipeline, multiplying attempts`,
+        ["retry"],
+      );
+    }
+  }
+
+  // 2c. INTERVAL_TOO_SHORT
+  try {
+    const intervalMs = cfg.interval ? parseDurationMs(cfg.interval) : null;
+    if (intervalMs != null) {
+      let sumMs = 0;
+      for (const { step } of objectSteps) {
+        const perStep = step.timeout !== undefined ? parseDurationMs(step.timeout) : DEFAULT_TIMEOUT_SECONDS * 1000;
+        const attempts = step.retry?.attempts ?? 1;
+        sumMs += perStep * attempts;
+      }
+      const pipelineMs = cfg.timeout !== undefined ? parseDurationMs(cfg.timeout) : sumMs;
+      const worstCase = Math.min(sumMs, pipelineMs);
+      if (worstCase > intervalMs) {
+        warn(
+          "INTERVAL_TOO_SHORT",
+          `interval (${intervalMs}ms) may be shorter than worst-case run duration (~${worstCase}ms); runs may overlap or be skipped by missedRunPolicy`,
+          ["interval"],
+        );
+      }
+    }
+  } catch {
+    // skip warning if duration parsing fails — reported elsewhere
+  }
+
+  // 2d. SHELL_INJECTION_RISK
+  for (const { step, index: idx } of objectSteps) {
+    if (step.type !== "shell") continue;
+    const command = typeof step.input === "string"
+      ? step.input
+      : (step.input as { command?: unknown } | undefined)?.command;
+    if (typeof command !== "string") continue;
+
+    let hasRisk = false;
+    let pos = 0;
+    while ((pos = command.indexOf("${", pos)) !== -1) {
+      // Walk backwards skipping whitespace
+      let j = pos - 1;
+      while (j >= 0 && (command[j] === " " || command[j] === "\t")) j--;
+      if (j < 0 || command[j] !== "'") {
+        hasRisk = true;
+        break;
+      }
+      pos += 2;
+    }
+    if (hasRisk) {
+      warn(
+        "SHELL_INJECTION_RISK",
+        `step "${step.name}" shell command interpolates \${...} without single-quote wrapping; consider quoting to avoid shell-injection on user-influenced inputs`,
+        ["pipeline", String(idx), "input"],
+      );
+    }
+  }
+
+  // TODO: 2e. ORPHAN_COLOCATED_SCRIPT — deferred to Phase 18 (spec §14.2)
+  // Requires CLI filesystem utilities that land in Phase 18.
+
+  // ── §14.1 hard errors (reference-level) ──────────────────────────
+  // Only run if no structural errors — otherwise noise multiplies.
+
+  if (errors.length === 0) {
+    const stepByName = new Map<string, { step: StepObject; index: number }>();
+    for (let i = 0; i < objectSteps.length; i++) {
+      const { step } = objectSteps[i];
+      if (step.name) stepByName.set(step.name, { step, index: i });
+    }
+
+    function validateRef(opts: { cur: StepObject; curIndex: number; namespace: string; refName: string }): void {
+      const { cur, curIndex, namespace, refName } = opts;
+      if (!stepByName.has(refName)) {
+        err("UNKNOWN_STEP_REFERENCE", `step "${cur.name}" references ${namespace}.${refName} which does not exist`, ["pipeline", String(curIndex)]);
+        return;
+      }
+      const target = stepByName.get(refName)!;
+      if (target.index === curIndex && namespace === "steps") {
+        err("SELF_REFERENCE", `step "${cur.name}" references steps.${cur.name} (its own output is not available at evaluation time)`, ["pipeline", String(curIndex)]);
+        return;
+      }
+      if (target.index > curIndex) {
+        err("FORWARD_REFERENCE", `step "${cur.name}" references ${namespace}.${refName} which is defined later (index ${target.index} vs current ${curIndex})`, ["pipeline", String(curIndex)]);
+        return;
+      }
+      if ((namespace === "changed" || namespace === "prev") && target.step.track === false) {
+        err("UNTRACKED_REFERENCE", `step "${cur.name}" uses ${namespace}.${refName} but step "${refName}" has track: false`, ["pipeline", String(curIndex)]);
+      }
+    }
+
+    function forEachString(v: unknown, visit: (s: string) => void): void {
+      if (typeof v === "string") { visit(v); return; }
+      if (Array.isArray(v)) { for (const x of v) forEachString(x, visit); return; }
+      if (v !== null && typeof v === "object") {
+        for (const x of Object.values(v as Record<string, unknown>)) forEachString(x, visit);
+      }
+    }
+
+    for (let i = 0; i < objectSteps.length; i++) {
+      const { step } = objectSteps[i];
+
+      // Reference scanning
+      const scanTargets: unknown[] = [step.input, step.when, step.timeout, step.retry, step.onError];
+      for (const target of scanTargets) {
+        forEachString(target, (s) => {
+          let tm: RegExpExecArray | null;
+          TEMPLATE_RE.lastIndex = 0;
+          while ((tm = TEMPLATE_RE.exec(s))) {
+            const body = tm[1];
+            let rm: RegExpExecArray | null;
+            IDENT_CHAIN_RE.lastIndex = 0;
+            while ((rm = IDENT_CHAIN_RE.exec(body))) {
+              const namespace = rm[1] as "steps" | "prev" | "changed";
+              const refName = rm[2];
+              if (RESERVED_ROOTS.has(refName)) continue;
+              validateRef({ cur: step, curIndex: i, namespace, refName });
+            }
+          }
+        });
+      }
+
+      // 1e. MISSING_REQUIRED_INPUT / REQUIRES_OBJECT_INPUT
+      if (step.type && HANDLER_REQUIRED_INPUT[step.type]) {
+        const schema = HANDLER_REQUIRED_INPUT[step.type];
+        if (typeof step.input === "string") {
+          if (!schema.stringShorthand) {
+            err(
+              "REQUIRES_OBJECT_INPUT",
+              `step "${step.name}" (type "${step.type}") does not accept string-shorthand input; use an object`,
+              ["pipeline", String(i), "input"],
+            );
+          }
+        } else {
+          const inputObj = (step.input ?? {}) as Record<string, unknown>;
+          for (const field of schema.fields) {
+            if (!(field in inputObj)) {
+              err(
+                "MISSING_REQUIRED_INPUT",
+                `step "${step.name}" (type "${step.type}") missing required input field "${field}"`,
+                ["pipeline", String(i), "input", field],
+              );
+            }
+          }
+        }
+      }
     }
   }
 
@@ -237,8 +422,15 @@ function validateRetrySpec(
   if (typeof r.backoff !== "string" || !VALID_BACKOFF.has(r.backoff)) {
     err("INVALID_RETRY_BACKOFF", `"retry.backoff" in ${context} must be one of: ${[...VALID_BACKOFF].join(", ")}`, [...path, "backoff"]);
   }
-  if (typeof r.initialDelay !== "number" || r.initialDelay < 0) {
-    err("INVALID_RETRY_DELAY", `"retry.initialDelay" in ${context} must be a non-negative number`, [...path, "initialDelay"]);
+  if (typeof r.initialDelay === "number") {
+    if (!Number.isFinite(r.initialDelay) || r.initialDelay < 0) {
+      err("INVALID_INITIAL_DELAY", `"retry.initialDelay" in ${context} must be a finite, non-negative number of seconds`, [...path, "initialDelay"]);
+    }
+  } else if (typeof r.initialDelay === "string") {
+    try { parseDurationMs(r.initialDelay); }
+    catch { err("INVALID_INITIAL_DELAY", `"retry.initialDelay" in ${context}: invalid duration "${r.initialDelay}"`, [...path, "initialDelay"]); }
+  } else {
+    err("INVALID_INITIAL_DELAY", `"retry.initialDelay" in ${context} must be a number (seconds) or duration string`, [...path, "initialDelay"]);
   }
 }
 
@@ -259,6 +451,8 @@ function validateStateHistory(
   }
   if (s.maxFileSize !== undefined && typeof s.maxFileSize !== "string") {
     err("INVALID_STATE_HISTORY_MAX_SIZE", `"stateHistory.maxFileSize" must be a string`, [...path, "maxFileSize"]);
+  } else if (typeof s.maxFileSize === "string" && !/^\d+(?:\.\d+)?(b|kb|mb|gb)$/i.test(s.maxFileSize)) {
+    err("INVALID_STATE_HISTORY_MAX_SIZE", `"stateHistory.maxFileSize" must match format like "5mb", "1gb"`, [...path, "maxFileSize"]);
   }
   if (s.maxFiles !== undefined) {
     if (typeof s.maxFiles !== "number" || s.maxFiles < 1) {
@@ -275,12 +469,8 @@ function validateOnErrorHook(
   context: string,
   err: (code: string, message: string, path?: string[]) => void,
 ): void {
-  if (typeof hook === "string") {
-    // String shorthand — treated as shell command, accept without further validation
-    return;
-  }
   if (!isObject(hook)) {
-    err("INVALID_ON_ERROR", `"onError" in ${context} must be a string or step object`, path);
+    err("INVALID_ON_ERROR", `"onError" in ${context} must be a step object`, path);
     return;
   }
   const s = hook as StepObject;

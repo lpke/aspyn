@@ -15,7 +15,8 @@ export type CanonicalStepName = (typeof CANONICAL_STEP_NAMES)[number];
 export interface RetrySpec {
   attempts: number;
   backoff: "fixed" | "linear" | "exponential";
-  initialDelay: number;
+  /** Duration string ("5s", "500ms") or seconds as a number. */
+  initialDelay: string | number;
 }
 
 // ── State history config ────────────────────────────────────────────
@@ -34,9 +35,11 @@ export interface StepObject {
   description?: string;
   input?: unknown;
   sideEffect?: boolean;
+  /** Default: true for side-effect steps and the final step; false otherwise. */
   track?: boolean;
   continueOnError?: boolean;
   when?: string;
+  /** Duration string ("30s", "5m") or seconds as a number. */
   timeout?: string | number;
   retry?: RetrySpec;
   onError?: Step;
@@ -50,6 +53,7 @@ export interface PipelineConfig {
   name?: string;
   description?: string;
   interval?: string;
+  /** Duration string ("30s", "5m") or seconds as a number. */
   timeout?: string | number;
   retry?: RetrySpec;
   proceedOnError?: boolean;

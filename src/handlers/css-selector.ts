@@ -69,13 +69,14 @@ register({
   async run(ctx: HandlerContext, input: unknown) {
     const { selectors } = input as { selectors: Record<string, string> };
 
-    const data = ctx.input as Record<string, unknown> | string;
-    const html =
-      typeof data === "string"
-        ? data
-        : typeof (data as Record<string, unknown>).html === "string"
-          ? (data as Record<string, unknown>).html as string
-          : undefined;
+    const raw = ctx.input;
+    let html: string | undefined;
+    if (typeof raw === "string") {
+      html = raw;
+    } else if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+      const maybe = (raw as Record<string, unknown>).html;
+      if (typeof maybe === "string") html = maybe;
+    }
 
     if (html === undefined) {
       throw new Error("css-selector: no HTML string found in input (checked html, string)");

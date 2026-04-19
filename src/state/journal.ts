@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fss from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -109,4 +110,27 @@ export function hydrateStepsFromJournal(
     }
   }
   return steps;
+}
+
+export async function truncateJournalToRunStart(
+  pipelineName: string,
+  runId: string,
+): Promise<void> {
+  const p = runLockPath(pipelineName);
+  const events = await readJournal(pipelineName);
+  const keep = events.find((e) => e.type === "run_start" && e.runId === runId);
+  if (!keep) {
+    try { fss.unlinkSync(p); } catch {}
+    return;
+  }
+  fss.writeFileSync(p, JSON.stringify(keep) + "\n");
+}
+
+
+export function lastStepOutputFromJournal(events: JournalEvent[]): unknown {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.type === "step_output") return (e as { output: unknown }).output;
+  }
+  return {};
 }

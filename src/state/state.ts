@@ -10,7 +10,11 @@ export async function readState(
   const filePath = stateJsonPath(pipelineName);
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(raw) as PipelineState;
+    try {
+      return JSON.parse(raw) as PipelineState;
+    } catch {
+      return null;
+    }
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;

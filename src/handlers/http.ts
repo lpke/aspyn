@@ -1,5 +1,6 @@
 import { register, type HandlerContext } from "./registry.js";
 import { DEFAULT_TIMEOUT_SECONDS } from "../constants.js";
+import { parseDurationMs } from "../duration.js";
 
 register({
   name: "http",
@@ -12,7 +13,7 @@ register({
       headers?: Record<string, string>;
       body?: unknown;
       throwOnError?: boolean;
-      timeout?: number;
+      timeout?: string | number;
     };
 
     const method = (opts.method ?? "GET").toUpperCase();
@@ -24,9 +25,11 @@ register({
       headers["content-type"] ??= "application/json";
     }
 
-    const timeout = opts.timeout ?? DEFAULT_TIMEOUT_SECONDS;
+    const timeoutMs = opts.timeout !== undefined
+      ? parseDurationMs(opts.timeout)
+      : DEFAULT_TIMEOUT_SECONDS * 1000;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout * 1000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     let res: Response;
     try {
@@ -39,7 +42,7 @@ register({
     } catch (err: unknown) {
       clearTimeout(timer);
       if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`http: ${method} ${opts.url} timed out after ${timeout}s`);
+        throw new Error(`http: ${method} ${opts.url} timed out after ${timeoutMs}ms`);
       }
       throw err;
     }

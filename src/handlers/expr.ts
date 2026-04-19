@@ -11,8 +11,8 @@ function exprContext(ctx: HandlerContext): Record<string, unknown> {
     firstRun: ctx.firstRun,
     meta: ctx.meta,
     changed: ctx.changed,
-    __failed: (ctx as unknown as Record<string, unknown>).__failed ?? null,
-    __error: (ctx as unknown as Record<string, unknown>).__error ?? null,
+    __failed: (ctx as unknown as Record<string, unknown>).__failed,
+    __error: (ctx as unknown as Record<string, unknown>).__error,
   };
 }
 

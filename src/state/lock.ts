@@ -1,10 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { concurrencyLockPath } from "../paths.js";
+import { LOCK_MAX_AGE_MS } from "../constants.js";
 
 export type LockHandle = { path: string; pid: number };
 
 export async function isStaleLock(path: string): Promise<boolean> {
+  try {
+    const stat = fs.statSync(path);
+    if (Date.now() - stat.mtimeMs > LOCK_MAX_AGE_MS) return true;
+  } catch {
+    return true;
+  }
   let raw: string;
   try {
     raw = fs.readFileSync(path, "utf-8");
@@ -57,8 +64,12 @@ export async function acquireLock(
 
 export async function releaseLock(handle: LockHandle): Promise<void> {
   try {
+    const raw = fs.readFileSync(handle.path, "utf-8");
+    const pid = parseInt(raw.trim(), 10);
+    if (pid !== handle.pid) return;
     fs.unlinkSync(handle.path);
-  } catch {
-    // Already removed — nothing to do
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
   }
 }

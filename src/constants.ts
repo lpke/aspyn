@@ -44,6 +44,12 @@ export const RUN_STATUS_SKIPPED = "skipped" as const;
 
 export const GATE_HANDLER_TYPE = "expr" as const;
 export const HALT_REASON_GATE_FALSY = "gate_falsy" as const;
+export const HALT_REASON_EXPR_THROW = "expr_throw" as const;
+export const HALT_REASON_HANDLER_THROW = "handler_throw" as const;
+export const HALT_REASON_ASPYN_LEVEL = "aspyn_level" as const;
+
+// ── Lock ─────────────────────────────────────────────────────────────
+export const LOCK_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 
 // ── Env vars ─────────────────────────────────────────────────────────
 export const ENV_CONTEXT_FILE = "ASPYN_CONTEXT_FILE";

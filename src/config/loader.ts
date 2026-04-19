@@ -43,8 +43,15 @@ function isStepObject(v: unknown): v is Record<string, unknown> {
  * as-is (shell-shorthand, resolved at runtime).
  */
 function normaliseHooks(cfg: PipelineConfig): void {
-  function stripHook(hook: Step): Step {
-    if (typeof hook === "string") return hook;
+  function stripHook(hook: Step): StepObject {
+    if (typeof hook === "string") {
+      return {
+        name: "onError",
+        type: "shell",
+        input: { command: hook },
+        sideEffect: true,
+      } satisfies StepObject;
+    }
     const h = hook as StepObject;
     delete (h as unknown as Record<string, unknown>).retry;
     delete (h as unknown as Record<string, unknown>).onError;

@@ -1,8 +1,9 @@
 import "../handlers/register-all.js";
 
-import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { ulid } from "ulidx";
 import { loadPipelineConfig, loadGlobalConfig } from "../config/loader.js";
-import { acquireLock, releaseLock, type LockHandle } from "../state/lock.js";
+import { acquireLock, releaseLock } from "../state/lock.js";
 import { readState, writeState } from "../state/state.js";
 import {
   appendEvent,
@@ -11,6 +12,8 @@ import {
   lastCompletedStep,
   hydrateStepsFromJournal,
   readJournal,
+  truncateJournalToRunStart,
+  lastStepOutputFromJournal,
 } from "../state/journal.js";
 import { appendHistory } from "../state/history.js";
 import { lookup } from "../handlers/registry.js";
@@ -35,6 +38,7 @@ import type {
   RunResult,
   OnceResult,
 } from "../types/pipeline.js";
+import { isHandlerHalt } from "../types/pipeline.js";
 import type {
   PipelineState,
   StateHistoryEntry,
@@ -48,6 +52,9 @@ import {
   RUN_STATUS_SKIPPED,
   GATE_HANDLER_TYPE,
   HALT_REASON_GATE_FALSY,
+  HALT_REASON_EXPR_THROW,
+  HALT_REASON_HANDLER_THROW,
+  HALT_REASON_ASPYN_LEVEL,
 } from "../constants.js";
 
 export type { RunOptions, RunResult };
@@ -55,7 +62,7 @@ export type { RunOptions, RunResult };
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function generateRunId(): string {
-  return crypto.randomUUID();
+  return ulid();
 }
 
 function nowIso(): string {
@@ -70,14 +77,14 @@ function normaliseStep(step: Step): StepObject {
 }
 
 function backoffDelay(spec: RetrySpec, attempt: number): number {
-  const base = spec.initialDelay;
+  const baseMs = parseDurationMs(spec.initialDelay);
   switch (spec.backoff) {
     case "linear":
-      return base * attempt;
+      return baseMs * attempt;
     case "exponential":
-      return base * 2 ** (attempt - 1);
+      return baseMs * 2 ** (attempt - 1);
     default:
-      return base;
+      return baseMs;
   }
 }
 
@@ -85,9 +92,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Whether a step is tracked: explicit `track: true`, or last step when `track` is undefined. */
-function isTracked(step: StepObject, index: number, total: number): boolean {
-  return step.track === true || (step.track === undefined && index === total - 1);
+function isTracked(
+  step: StepObject,
+  handler: { sideEffectDefault?: boolean } | undefined,
+  index: number,
+  total: number,
+): boolean {
+  if (step.track !== undefined) return step.track;
+  const sideEffect = step.sideEffect ?? handler?.sideEffectDefault ?? false;
+  return sideEffect || index === total - 1;
 }
 
 function buildExprContext(ctx: PipelineContext): Record<string, unknown> {
@@ -98,20 +111,26 @@ function buildExprContext(ctx: PipelineContext): Record<string, unknown> {
     firstRun: ctx.firstRun,
     meta: ctx.meta,
     changed: ctx.changed,
-    anyChanged: Object.values(ctx.changed).some(Boolean),
-    __failed: (ctx as unknown as Record<string, unknown>).__failed ?? null,
-    __error: (ctx as unknown as Record<string, unknown>).__error ?? null,
+    __failed: (ctx as unknown as Record<string, unknown>).__failed,
+    __error: (ctx as unknown as Record<string, unknown>).__error,
   };
 }
 
 function resolveStepIndex(
   steps: StepObject[],
   ref: string | number | undefined,
+  fieldName: "from" | "until",
 ): number | undefined {
   if (ref === undefined) return undefined;
-  if (typeof ref === "number") return ref;
+  if (typeof ref === "number") {
+    if (ref < 0 || ref >= steps.length) {
+      throw new Error(`--${fieldName} index ${ref} out of range (0..${steps.length - 1})`);
+    }
+    return ref;
+  }
   const idx = steps.findIndex((s) => s.name === ref);
-  return idx === -1 ? undefined : idx;
+  if (idx === -1) throw new Error(`--${fieldName} references unknown step "${ref}"`);
+  return idx;
 }
 
 // ── Timeout helper ──────────────────────────────────────────────────
@@ -134,11 +153,8 @@ function withTimeout<T>(
   };
 }
 
-function pipelineTimeoutError(stepName: string | null, ms: number): { message: string; step: string } {
-  return {
-    message: `Pipeline timed out after ${ms}ms`,
-    step: stepName ?? "(pipeline)",
-  };
+function pipelineTimeoutError(stepName: string | null, ms: number) {
+  return { message: `Pipeline timed out after ${ms}ms`, step: stepName, kind: "pipeline_timeout" as const };
 }
 
 // ── Core execution ──────────────────────────────────────────────────
@@ -165,20 +181,21 @@ async function runPipelineOnce(
   crashResumeSteps: Record<string, unknown>,
   crashResumeAfter: string | null,
   crashed: boolean,
+  crashResumeInput: unknown,
 ): Promise<OnceResult> {
   const allSteps = cfg.pipeline.map(normaliseStep);
   const runNumber = (prevState?.runCount ?? 0) + 1;
 
-  const fromIdx = resolveStepIndex(allSteps, opts.from) ?? 0;
-  const untilIdx = resolveStepIndex(allSteps, opts.until) ?? allSteps.length - 1;
+  const fromIdx = resolveStepIndex(allSteps, opts.from, "from") ?? 0;
+  const untilIdx = resolveStepIndex(allSteps, opts.until, "until") ?? allSteps.length - 1;
 
   // Engine-local changed map (not on ctx)
   const changedMap: Record<string, boolean> = {};
 
   const ctx: PipelineContext & Record<string, unknown> = {
-    input: {},
+    input: crashResumeInput,
     steps: { ...crashResumeSteps },
-    prev: prevState?.lastValues ?? {},
+    prev: prevState?.lastValues ? structuredClone(prevState.lastValues) : {},
     changed: changedMap,
     firstRun: !prevState,
     meta: {
@@ -194,7 +211,7 @@ async function runPipelineOnce(
   const warnings: Array<{ step: string; message: string }> = [];
   let finalStatus: RunStatus = RUN_STATUS_OK;
   let halt: Halt | undefined;
-  let runError: { message: string; step: string } | undefined;
+  let runError: { message: string; step: string | null; kind?: "pipeline_timeout" } | undefined;
   let lastValues: Record<string, StepOutput> = { ...(prevState?.lastValues ?? {}) };
 
   // Pipeline-level timeout (independent clock)
@@ -203,13 +220,6 @@ async function runPipelineOnce(
   const pipelineTimer = setTimeout(() => {
     pipelineTimedOut = true;
   }, pipelineTimeoutMs);
-
-  appendEvent(name, {
-    type: "run_start",
-    runId,
-    pid: process.pid,
-    startedAt,
-  });
 
   try {
     let skipUntilAfterCrash = crashed && opts.continueFromCrash && crashResumeAfter !== null;
@@ -233,6 +243,10 @@ async function runPipelineOnce(
         continue;
       }
 
+      // Clear __error / __failed between steps (§3)
+      ctx.__error = null;
+      ctx.__failed = null;
+
       // Evaluate `when` condition
       if (stepDef.when) {
         const whenResult = await engine.evaluate(stepDef.when, buildExprContext(ctx));
@@ -244,18 +258,24 @@ async function runPipelineOnce(
         }
       }
 
-      // Dry run: skip actual execution
-      if (opts.dry && (stepDef.sideEffect !== false)) {
+      // Resolve handler
+      const handler = lookup(stepDef.type);
+      if (!handler) {
+        appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
+        halt = { atStep: stepDef.name, reason: HALT_REASON_ASPYN_LEVEL };
+        finalStatus = RUN_STATUS_HALTED;
+        runError = { message: `Unknown handler type "${stepDef.type}"`, step: stepDef.name };
+        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+        break;
+      }
+
+      // Dry run: skip side-effect steps (§1)
+      const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? true;
+      if (opts.dry && effectiveSideEffect) {
         appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
         appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_SKIPPED, endedAt: nowIso() });
         logger.info(`[dry] Skipping side-effect step "${stepDef.name}"`);
         continue;
-      }
-
-      // Resolve handler
-      const handler = lookup(stepDef.type);
-      if (!handler) {
-        throw new Error(`Unknown handler type "${stepDef.type}" for step "${stepDef.name}"`);
       }
 
       // Resolve input templates
@@ -314,6 +334,14 @@ async function runPipelineOnce(
       }
 
       if (stepError) {
+        // Gate expr throw → halt (§9)
+        if (stepDef.type === GATE_HANDLER_TYPE && !stepDef.continueOnError && !cfg.proceedOnError) {
+          halt = { atStep: stepDef.name, reason: HALT_REASON_EXPR_THROW };
+          finalStatus = RUN_STATUS_HALTED;
+          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+          break;
+        }
+
         if (stepDef.continueOnError) {
           softErrors.push({ step: stepDef.name, message: stepError.message, handled: "continueOnError" });
           ctx.__error = { step: stepDef.name, message: stepError.message };
@@ -341,6 +369,15 @@ async function runPipelineOnce(
         }
       }
 
+      // Check handler halt signal (§9)
+      if (isHandlerHalt(stepOutput)) {
+        halt = { atStep: stepDef.name, reason: stepOutput.reason === "aspyn_level" ? HALT_REASON_ASPYN_LEVEL : HALT_REASON_HANDLER_THROW };
+        runError = { message: stepOutput.message, step: stepDef.name };
+        finalStatus = RUN_STATUS_HALTED;
+        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+        break;
+      }
+
       // Check gate halt: expr step returning falsy
       if (stepDef.type === GATE_HANDLER_TYPE && !stepOutput) {
         halt = { atStep: stepDef.name, reason: HALT_REASON_GATE_FALSY };
@@ -352,13 +389,14 @@ async function runPipelineOnce(
 
       // Success: record output
       ctx.steps[stepDef.name] = stepOutput;
+      ctx.input = stepOutput;
 
-      // Track and detect changes — only for tracked steps
-      const tracked = isTracked(stepDef, i, allSteps.length);
+      // Track and detect changes — only for tracked steps (§2, §11)
+      const tracked = isTracked(stepDef, handler, i, allSteps.length);
       if (tracked) {
         appendEvent(name, { type: "step_output", runId, name: stepDef.name, output: stepOutput });
         const prevVal = (prevState?.lastValues ?? {})[stepDef.name];
-        const changed = prevVal === undefined || JSON.stringify(prevVal) !== JSON.stringify(stepOutput);
+        const changed = prevVal === undefined || !isDeepStrictEqual(prevVal, stepOutput);
         changedMap[stepDef.name] = changed;
         ctx.changed = { ...changedMap };
         lastValues[stepDef.name] = stepOutput;
@@ -369,7 +407,7 @@ async function runPipelineOnce(
 
     // Pipeline-level onError hook
     if (finalStatus === RUN_STATUS_ERROR && cfg.onError && runError) {
-      await runOnErrorHook(cfg.onError, name, runId, engine, ctx, runError.step, runError.message);
+      await runOnErrorHook(cfg.onError, name, runId, engine, ctx, runError.step ?? "(pipeline)", runError.message);
     }
   } finally {
     clearTimeout(pipelineTimer);
@@ -394,7 +432,6 @@ export async function runPipeline(
   name: string,
   opts: RunOptions = {},
 ): Promise<RunResult> {
-  const runId = generateRunId();
   const startedAt = nowIso();
   const startMs = Date.now();
 
@@ -405,8 +442,11 @@ export async function runPipeline(
   // 2. Acquire lock
   const lock = await acquireLock(name);
   if (!lock) {
-    return { status: RUN_STATUS_INTERRUPTED, runId };
+    return { status: RUN_STATUS_INTERRUPTED, runId: "" };
   }
+
+  // Generate runId after lock acquisition (§17)
+  const runId = generateRunId();
 
   // 3. Check crashed run
   const crashed = await hasCrashedRun(name);
@@ -415,17 +455,19 @@ export async function runPipeline(
       await clearJournal(name);
     } else if (!opts.continueFromCrash) {
       await releaseLock(lock);
-      return { status: RUN_STATUS_INTERRUPTED, runId };
+      return { status: RUN_STATUS_INTERRUPTED, runId: "" };
     }
   }
 
   // Determine crash-resume context
   let crashResumeSteps: Record<string, unknown> = {};
   let crashResumeAfter: string | null = null;
+  let crashResumeInput: unknown = {};
   if (crashed && opts.continueFromCrash) {
     const events = await readJournal(name);
     crashResumeSteps = hydrateStepsFromJournal(events);
     crashResumeAfter = lastCompletedStep(events);
+    crashResumeInput = lastStepOutputFromJournal(events);
     await clearJournal(name);
   }
 
@@ -439,11 +481,24 @@ export async function runPipeline(
   let result: OnceResult | undefined;
 
   try {
+    // Emit run_start once before the retry loop (§7)
+    appendEvent(name, {
+      type: "run_start",
+      runId,
+      pid: process.pid,
+      startedAt,
+    });
+
     for (let pAttempt = 1; pAttempt <= pipelineMaxAttempts; pAttempt++) {
+      // Truncate journal to run_start between retry attempts (§7)
+      if (pAttempt > 1) {
+        await truncateJournalToRunStart(name, runId);
+      }
+
       result = await runPipelineOnce(
         name, opts, cfg, globalCfg, prevState,
         runId, startedAt,
-        crashResumeSteps, crashResumeAfter, crashed,
+        crashResumeSteps, crashResumeAfter, crashed, crashResumeInput,
       );
 
       // Only retry on error (but not pipeline timeout)
@@ -465,24 +520,6 @@ export async function runPipeline(
     // Journal run_end
     appendEvent(name, { type: "run_end", runId, status: r.status, endedAt });
 
-    // Write state — only persist new lastValues on success
-    const persistedLastValues = r.status === RUN_STATUS_OK
-      ? r.lastValues
-      : (prevState?.lastValues ?? {});
-
-    const newState: PipelineState = {
-      lastRun: endedAt,
-      lastStatus: r.status,
-      lastError: r.error?.message ?? null,
-      runCount: runNumber,
-      consecutiveFailures:
-        r.status === RUN_STATUS_ERROR
-          ? (prevState?.consecutiveFailures ?? 0) + 1
-          : 0,
-      lastValues: persistedLastValues,
-    };
-    await writeState(name, newState);
-
     // State history
     const stateHistoryCfg = cfg.stateHistory ?? globalCfg.stateHistory ?? { enabled: true };
     if (stateHistoryCfg.enabled !== false) {
@@ -502,10 +539,27 @@ export async function runPipeline(
       appendHistory(name, entry, stateHistoryCfg);
     }
 
-    // Clear journal on clean exit
-    if (r.status === RUN_STATUS_OK || r.status === RUN_STATUS_HALTED) {
-      await clearJournal(name);
-    }
+    // Write state — persist lastValues on success or halted (§4)
+    const persistedLastValues =
+      r.status === RUN_STATUS_OK || r.status === RUN_STATUS_HALTED
+        ? r.lastValues
+        : (prevState?.lastValues ?? {});
+
+    const newState: PipelineState = {
+      lastRun: endedAt,
+      lastStatus: r.status,
+      lastError: r.error?.message ?? null,
+      runCount: runNumber,
+      consecutiveFailures:
+        r.status === RUN_STATUS_ERROR
+          ? (prevState?.consecutiveFailures ?? 0) + 1
+          : 0,
+      lastValues: persistedLastValues,
+    };
+    await writeState(name, newState);
+
+    // Clear journal unconditionally on completion (§6)
+    await clearJournal(name);
 
     return {
       status: r.status,
