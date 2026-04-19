@@ -1,4 +1,7 @@
-import type { StepOutput, RunStatus, Halt, SoftError, StepStatus } from "./pipeline.js";
+import type { StepOutput, RunStatus, Halt, SoftError } from "./pipeline.js";
+import { JOURNAL_EVENTS } from "../constants.js";
+
+export type JournalEventType = (typeof JOURNAL_EVENTS)[number];
 
 // ── Persisted pipeline state ────────────────────────────────────────
 
@@ -23,7 +26,7 @@ export interface StateHistoryEntry {
   halt: Halt | null;
   error: string | null;
   stepOutputs: Record<string, StepOutput>;
-  warnings: string[];
+  warnings: Array<{ step: string; message: string }>;
   softErrors: SoftError[];
 }
 
@@ -54,7 +57,7 @@ export interface JournalStepEnd {
   type: "step_end";
   runId: string;
   name: string;
-  status: StepStatus;
+  status: RunStatus;
   endedAt: string;
 }
 

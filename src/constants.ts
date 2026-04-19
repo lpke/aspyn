@@ -21,26 +21,29 @@ export const DAEMON_PIPELINE_SCAN_INTERVAL_MS = 60_000;
 
 // ── Enums ────────────────────────────────────────────────────────────
 export const LOG_LEVELS = ["error", "warn", "info", "debug"] as const;
-export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export const RUN_STATUSES = ["ok", "error", "halted", "interrupted", "skipped"] as const;
-export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const MISSED_RUN_POLICIES = ["run_once", "skip", "run_all"] as const;
-export type MissedRunPolicy = (typeof MISSED_RUN_POLICIES)[number];
 
 export const JOURNAL_EVENTS = ["run_start", "step_start", "step_output", "step_end", "context_file", "run_end"] as const;
-export type JournalEventType = (typeof JOURNAL_EVENTS)[number];
 
-export const HALT_REASONS = ["gate_falsy", "expr_throw", "timeout", "handler_throw", "aspyn_level"] as const;
-export type HaltReason = (typeof HALT_REASONS)[number];
+export const HALT_REASONS = ["gate_falsy", "expr_throw", "handler_throw", "aspyn_level"] as const;
 
 export const HANDLER_TYPES = ["http", "webpage", "file", "shell", "css-selector", "jsonpath", "regex", "expr", "notification-desktop", "log"] as const;
-export type HandlerType = (typeof HANDLER_TYPES)[number];
 
 // ── Canonical recipe step names ──────────────────────────────────────
 export const CANONICAL_STEP_NAMES = ["input", "parse", "check", "action"] as const;
-export type CanonicalStepName = (typeof CANONICAL_STEP_NAMES)[number];
+
+// ── Named constants (avoid inline literals) ──────────────────────────
+export const RUN_STATUS_OK = "ok" as const;
+export const RUN_STATUS_ERROR = "error" as const;
+export const RUN_STATUS_HALTED = "halted" as const;
+export const RUN_STATUS_INTERRUPTED = "interrupted" as const;
+export const RUN_STATUS_SKIPPED = "skipped" as const;
+
+export const GATE_HANDLER_TYPE = "expr" as const;
+export const HALT_REASON_GATE_FALSY = "gate_falsy" as const;
 
 // ── Env vars ─────────────────────────────────────────────────────────
 export const ENV_CONTEXT_FILE = "ASPYN_CONTEXT_FILE";

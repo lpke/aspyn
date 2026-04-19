@@ -1,4 +1,14 @@
-import type { LogLevel, MissedRunPolicy } from "../constants.js";
+import {
+  LOG_LEVELS,
+  MISSED_RUN_POLICIES,
+  HANDLER_TYPES,
+  CANONICAL_STEP_NAMES,
+} from "../constants.js";
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+export type MissedRunPolicy = (typeof MISSED_RUN_POLICIES)[number];
+export type HandlerType = (typeof HANDLER_TYPES)[number];
+export type CanonicalStepName = (typeof CANONICAL_STEP_NAMES)[number];
 
 // ── Retry spec ──────────────────────────────────────────────────────
 
@@ -27,9 +37,9 @@ export interface StepObject {
   track?: boolean;
   continueOnError?: boolean;
   when?: string;
-  timeout?: number;
+  timeout?: string | number;
   retry?: RetrySpec;
-  onError?: string;
+  onError?: Step;
 }
 
 export type Step = string | StepObject;
@@ -40,10 +50,10 @@ export interface PipelineConfig {
   name?: string;
   description?: string;
   interval?: string;
-  timeout?: number;
+  timeout?: string | number;
   retry?: RetrySpec;
   proceedOnError?: boolean;
-  onError?: string;
+  onError?: Step;
   log?: LogLevel;
   stateHistory?: StateHistoryConfig;
   pipeline: Step[];

@@ -92,8 +92,12 @@ export function validatePipeline(
 
     // timeout
     if (s.timeout !== undefined) {
-      if (typeof s.timeout !== "number" || s.timeout <= 0) {
-        err("INVALID_TIMEOUT", `Step "${s.name}" timeout must be a positive number`, ["pipeline", String(i), "timeout"]);
+      if (typeof s.timeout === "string") {
+        if (!DURATION_RE.test(s.timeout)) {
+          err("INVALID_TIMEOUT", `Step "${s.name}" timeout must be a positive number or duration string`, ["pipeline", String(i), "timeout"]);
+        }
+      } else if (typeof s.timeout !== "number" || s.timeout <= 0) {
+        err("INVALID_TIMEOUT", `Step "${s.name}" timeout must be a positive number or duration string`, ["pipeline", String(i), "timeout"]);
       }
     }
 
@@ -107,11 +111,9 @@ export function validatePipeline(
       err("INVALID_WHEN", `Step "${s.name}" "when" must be a string expression`, ["pipeline", String(i), "when"]);
     }
 
-    // onError — must reference a step name (warning if not found, since step may be defined later)
+    // onError — inline Step (string or StepObject)
     if (s.onError !== undefined) {
-      if (typeof s.onError !== "string") {
-        err("INVALID_ON_ERROR", `Step "${s.name}" "onError" must be a string (step name)`, ["pipeline", String(i), "onError"]);
-      }
+      validateOnErrorHook(s.onError, ["pipeline", String(i), "onError"], `step "${s.name}"`, err);
     }
 
     // sideEffect — boolean
@@ -135,16 +137,10 @@ export function validatePipeline(
     }
   }
 
-  // ── onError references must point to existing step names ──────────
+  // ── onError references ── (now inline Steps, no UNRESOLVED check needed)
 
-  for (const { step, index } of objectSteps) {
-    if (typeof step.onError === "string" && !stepNames.has(step.onError)) {
-      err("UNRESOLVED_ON_ERROR", `Step "${step.name}" onError references unknown step "${step.onError}"`, ["pipeline", String(index), "onError"]);
-    }
-  }
-
-  if (typeof cfg.onError === "string" && !stepNames.has(cfg.onError)) {
-    err("UNRESOLVED_ON_ERROR", `Pipeline-level onError references unknown step "${cfg.onError}"`, ["onError"]);
+  if (cfg.onError !== undefined) {
+    validateOnErrorHook(cfg.onError, ["onError"], "pipeline-level", err);
   }
 
   // ── pipeline-level fields ─────────────────────────────────────────
@@ -158,8 +154,12 @@ export function validatePipeline(
 
   // timeout
   if (cfg.timeout !== undefined) {
-    if (typeof cfg.timeout !== "number" || cfg.timeout <= 0) {
-      err("INVALID_TIMEOUT", `Pipeline-level "timeout" must be a positive number`, ["timeout"]);
+    if (typeof cfg.timeout === "string") {
+      if (!DURATION_RE.test(cfg.timeout)) {
+        err("INVALID_TIMEOUT", `Pipeline-level "timeout" must be a positive number or duration string`, ["timeout"]);
+      }
+    } else if (typeof cfg.timeout !== "number" || cfg.timeout <= 0) {
+      err("INVALID_TIMEOUT", `Pipeline-level "timeout" must be a positive number or duration string`, ["timeout"]);
     }
   }
 
@@ -264,6 +264,33 @@ function validateStateHistory(
     if (typeof s.maxFiles !== "number" || s.maxFiles < 1) {
       err("INVALID_STATE_HISTORY_MAX_FILES", `"stateHistory.maxFiles" must be a positive number`, [...path, "maxFiles"]);
     }
+  }
+}
+
+// ── onError hook validation helper ───────────────────────────────────
+
+function validateOnErrorHook(
+  hook: Step,
+  path: string[],
+  context: string,
+  err: (code: string, message: string, path?: string[]) => void,
+): void {
+  if (typeof hook === "string") {
+    // String shorthand — treated as shell command, accept without further validation
+    return;
+  }
+  if (!isObject(hook)) {
+    err("INVALID_ON_ERROR", `"onError" in ${context} must be a string or step object`, path);
+    return;
+  }
+  const s = hook as StepObject;
+  if (typeof s.name !== "string" || s.name.length === 0) {
+    err("MISSING_STEP_NAME", `"onError" in ${context} must have a non-empty "name"`, [...path, "name"]);
+  }
+  if (typeof s.type !== "string" || s.type.length === 0) {
+    err("MISSING_STEP_TYPE", `"onError" in ${context} must have a non-empty "type"`, [...path, "type"]);
+  } else if (!VALID_HANDLER_TYPES.has(s.type)) {
+    err("UNKNOWN_HANDLER_TYPE", `"onError" in ${context} has unknown type "${s.type}"`, [...path, "type"]);
   }
 }
 

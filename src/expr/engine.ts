@@ -119,39 +119,6 @@ function helperThrow(msg: unknown): never {
 }
 
 // ---------------------------------------------------------------------------
-// changed helper — callable function object with property access
-// ---------------------------------------------------------------------------
-
-interface ChangedFn {
-  (): boolean;
-  (name: string): boolean;
-  valueOf(): number;
-  [key: string]: boolean | ((...args: unknown[]) => unknown);
-}
-
-function buildChangedValue(
-  changedMap: Record<string, boolean> | undefined,
-): ChangedFn {
-  const map = changedMap ?? {};
-  const anyChanged = Object.values(map).some(Boolean);
-
-  const fn = function changed(name?: string): boolean {
-    if (name === undefined) return anyChanged;
-    return !!map[name];
-  } as ChangedFn;
-
-  // Expose each key as a boolean property
-  for (const [k, v] of Object.entries(map)) {
-    (fn as Record<string, unknown>)[k] = !!v;
-  }
-
-  // Coerce to boolean via valueOf
-  fn.valueOf = () => (anyChanged ? 1 : 0);
-
-  return fn;
-}
-
-// ---------------------------------------------------------------------------
 // Engine factory
 // ---------------------------------------------------------------------------
 
@@ -224,13 +191,14 @@ export function createEngine(): ExprEngine {
   );
 
   function prepareCtx(ctx: Record<string, unknown>): Record<string, unknown> {
-    const map = (ctx.__changedMap as Record<string, boolean> | undefined) ?? {};
+    const map = (ctx.changed as Record<string, boolean> | undefined) ?? {};
     // Update the closure ref so the jexl-registered changed() sees current map
     currentChangedMap = map;
     const prepared = { ...ctx };
-    // Inject `changed` as a callable value so `changed.stepName` property access works
-    prepared.changed = buildChangedValue(map);
-    // `firstRun` is expected to already be on ctx
+    // Expose `changed` as a plain object keyed by step name → boolean
+    prepared.changed = { ...map };
+    // Expose `anyChanged` as a boolean
+    prepared.anyChanged = Object.values(map).some(Boolean);
     return prepared;
   }
 

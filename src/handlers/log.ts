@@ -4,7 +4,7 @@ import { register, type HandlerContext } from "./registry.js";
 import { actionLogPath } from "../paths.js";
 import { rotateIfNeededSync } from "../logger.js";
 import { DEFAULT_ROTATION_MAX_FILE_SIZE, DEFAULT_ROTATION_MAX_FILES } from "../constants.js";
-import type { LogLevel } from "../constants.js";
+import type { LogLevel } from "../types/config.js";
 
 register({
   name: "log",

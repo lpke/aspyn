@@ -6,7 +6,7 @@ import { DEFAULT_ROTATION_MAX_FILE_SIZE, DEFAULT_ROTATION_MAX_FILES } from "./co
 
 // ── Types ───────────────────────────────────────────────────────────
 
-import type { LogLevel } from "./constants.js";
+import type { LogLevel } from "./types/config.js";
 
 export interface Logger {
   debug(...args: unknown[]): void;

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse, type ParseError } from "jsonc-parser";
-import type { GlobalConfig, PipelineConfig, StepObject } from "../types/config.js";
+import type { GlobalConfig, PipelineConfig, StepObject, Step } from "../types/config.js";
 import {
   DEFAULT_INTERVAL,
   DEFAULT_TIMEOUT_SECONDS,
@@ -38,32 +38,26 @@ function isStepObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Find step objects referenced as onError hooks and strip their
- * `retry` and nested `onError` fields.
+ * Walk every onError (pipeline-level and per-step). For inline StepObject
+ * hooks, strip `retry` and nested `onError` fields. String hooks are left
+ * as-is (shell-shorthand, resolved at runtime).
  */
 function normaliseHooks(cfg: PipelineConfig): void {
-  // Collect step names that are used as onError hooks
-  const hookNames = new Set<string>();
+  function stripHook(hook: Step): Step {
+    if (typeof hook === "string") return hook;
+    const h = hook as StepObject;
+    delete (h as unknown as Record<string, unknown>).retry;
+    delete (h as unknown as Record<string, unknown>).onError;
+    return h;
+  }
 
-  if (typeof cfg.onError === "string") {
-    hookNames.add(cfg.onError);
+  if (cfg.onError !== undefined) {
+    cfg.onError = stripHook(cfg.onError);
   }
 
   for (const step of cfg.pipeline) {
-    if (typeof step !== "string" && step.onError) {
-      hookNames.add(step.onError);
-    }
-  }
-
-  if (hookNames.size === 0) return;
-
-  // Walk steps and strip retry/onError from any step whose name is a hook target
-  for (let i = 0; i < cfg.pipeline.length; i++) {
-    const step = cfg.pipeline[i];
-    if (typeof step === "string") continue;
-    if (hookNames.has(step.name)) {
-      delete (step as unknown as Record<string, unknown>).retry;
-      delete (step as unknown as Record<string, unknown>).onError;
+    if (typeof step !== "string" && step.onError !== undefined) {
+      step.onError = stripHook(step.onError);
     }
   }
 }
