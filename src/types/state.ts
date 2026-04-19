@@ -30,42 +30,42 @@ export interface StateHistoryEntry {
 // ── Journal events (run.lock.jsonl) ─────────────────────────────────
 
 export interface JournalRunStart {
-  event: "run_start";
+  type: "run_start";
   runId: string;
   pid: number;
   startedAt: string;
 }
 
 export interface JournalStepStart {
-  event: "step_start";
+  type: "step_start";
   runId: string;
-  step: string;
+  name: string;
   startedAt: string;
 }
 
 export interface JournalStepOutput {
-  event: "step_output";
+  type: "step_output";
   runId: string;
-  step: string;
+  name: string;
   output: StepOutput;
 }
 
 export interface JournalStepEnd {
-  event: "step_end";
+  type: "step_end";
   runId: string;
-  step: string;
+  name: string;
   status: StepStatus;
   endedAt: string;
 }
 
 export interface JournalContextFile {
-  event: "context_file";
+  type: "context_file";
   runId: string;
   path: string;
 }
 
 export interface JournalRunEnd {
-  event: "run_end";
+  type: "run_end";
   runId: string;
   status: RunStatus;
   endedAt: string;
