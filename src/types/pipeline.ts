@@ -1,26 +1,53 @@
 // ── Step output ─────────────────────────────────────────────────────
 
-export type StepOutput = Record<string, unknown>;
+export type StepOutput = unknown;
 
-// ── Pipeline context (passed to check & action steps) ───────────────
+// ── Pipeline context (passed to handlers) ───────────────────────────
 
 export interface PipelineContext {
-  value: StepOutput;
-  prev: StepOutput | null;
+  input: Record<string, unknown>;
+  steps: Record<string, StepOutput>;
+  prev: Record<string, StepOutput> | null;
   changed: boolean;
   firstRun: boolean;
   meta: {
-    watch: string;
+    pipeline: string;
     timestamp: string;
-    interval: string;
+    interval: number;
+    run_number: number;
   };
 }
 
-// ── Pipeline result (outcome of a full pipeline run) ────────────────
+// ── Soft error ──────────────────────────────────────────────────────
 
-export interface PipelineResult {
-  success: boolean;
-  value: StepOutput | null;
-  error: string | null;
-  skipped: boolean;
+export interface SoftError {
+  step: string;
+  message: string;
+  handled: "proceedOnError" | "continueOnError";
 }
+
+// ── Handler result ──────────────────────────────────────────────────
+
+export interface HandlerResult {
+  output: StepOutput;
+}
+
+// ── Halt ────────────────────────────────────────────────────────────
+
+export interface Halt {
+  atStep: string;
+  reason:
+    | "gate_falsy"
+    | "expr_throw"
+    | "timeout"
+    | "handler_throw"
+    | string;
+}
+
+// ── Step status ─────────────────────────────────────────────────────
+
+export type StepStatus = "ok" | "error" | "skipped" | "halted";
+
+// ── Run status ──────────────────────────────────────────────────────
+
+export type RunStatus = "ok" | "error" | "halted" | "interrupted" | "skipped";
