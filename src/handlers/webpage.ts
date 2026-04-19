@@ -28,7 +28,7 @@ register({
 
       if (waitFor) {
         await page.waitForSelector(waitFor, {
-          timeout: timeout ?? DEFAULT_TIMEOUT_SECONDS * 1000,
+          timeout: (timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000,
         });
       }
 

@@ -21,7 +21,6 @@
   "author": "luke@lpdev.io",
   "version": "2.0.0-alpha.0",
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",

@@ -1,10 +1,4 @@
-// ── Log level ───────────────────────────────────────────────────────
-
-export type LogLevel = "error" | "warn" | "info" | "debug";
-
-// ── Missed-run policy ───────────────────────────────────────────────
-
-export type MissedRunPolicy = "run_once" | "skip" | "run_all";
+import type { LogLevel, MissedRunPolicy } from "../constants.js";
 
 // ── Retry spec ──────────────────────────────────────────────────────
 
@@ -18,7 +12,7 @@ export interface RetrySpec {
 
 export interface StateHistoryConfig {
   enabled?: boolean;
-  maxFileSize?: number;
+  maxFileSize?: string;
   maxFiles?: number;
 }
 
@@ -28,7 +22,7 @@ export interface StepObject {
   name: string;
   type: string;
   description?: string;
-  input?: Record<string, unknown>;
+  input?: unknown;
   sideEffect?: boolean;
   track?: boolean;
   continueOnError?: boolean;
@@ -45,7 +39,7 @@ export type Step = string | StepObject;
 export interface PipelineConfig {
   name?: string;
   description?: string;
-  interval?: number;
+  interval?: string;
   timeout?: number;
   retry?: RetrySpec;
   proceedOnError?: boolean;
@@ -58,9 +52,9 @@ export interface PipelineConfig {
 // ── Global config (~/.config/aspyn/config.jsonc) ────────────────────
 
 export interface GlobalConfig {
-  defaultInterval: number;
+  defaultInterval: string;
   defaultTimeout: number;
-  minInterval: number;
+  minInterval: string;
   shutdownTimeout: number;
   missedRunPolicy: MissedRunPolicy;
   playwright?: {

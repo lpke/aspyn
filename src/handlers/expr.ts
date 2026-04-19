@@ -8,9 +8,9 @@ function exprContext(ctx: HandlerContext): Record<string, unknown> {
     input: ctx.input,
     steps: ctx.steps,
     prev: ctx.prev,
-    changed: ctx.changed,
     firstRun: ctx.firstRun,
     meta: ctx.meta,
+    __changedMap: ctx.__changedMap,
     __failed: (ctx as unknown as Record<string, unknown>).__failed ?? null,
     __error: (ctx as unknown as Record<string, unknown>).__error ?? null,
   };

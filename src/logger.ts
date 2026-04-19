@@ -2,10 +2,11 @@ import fs from "node:fs/promises";
 import fss from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
+import { DEFAULT_ROTATION_MAX_FILE_SIZE, DEFAULT_ROTATION_MAX_FILES } from "./constants.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+import type { LogLevel } from "./constants.js";
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -130,8 +131,8 @@ export function createLogger(options?: LoggerOptions): Logger {
   const minLevel = LEVELS[options?.level ?? "info"];
   const prefix = options?.prefix;
   const logFile = options?.logFile;
-  const maxFileSize = options?.maxFileSize ?? "5mb";
-  const maxFiles = options?.maxFiles ?? 5;
+  const maxFileSize = options?.maxFileSize ?? DEFAULT_ROTATION_MAX_FILE_SIZE;
+  const maxFiles = options?.maxFiles ?? DEFAULT_ROTATION_MAX_FILES;
 
   function log(level: LogLevel, args: unknown[]): void {
     if (LEVELS[level] < minLevel) return;

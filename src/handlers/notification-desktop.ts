@@ -16,7 +16,7 @@ register({
 
     const message = opts.body ?? opts.message ?? "";
 
-    return new Promise<unknown>((resolve) => {
+    return new Promise<unknown>((resolve, reject) => {
       notifier.notify(
         {
           title: opts.title,
@@ -31,7 +31,8 @@ register({
               resolve({ delivered: false, reason: "notify-send not available" });
               return;
             }
-            throw err;
+            reject(err);
+            return;
           }
           resolve({ delivered: true });
         },

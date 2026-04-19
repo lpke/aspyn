@@ -80,9 +80,13 @@ function helperCoalesce(...args: unknown[]): unknown {
 function helperPick(
   obj: unknown,
   keys: unknown,
-): Record<string, unknown> | undefined {
-  if (obj == null || typeof obj !== "object" || !Array.isArray(keys))
-    return undefined;
+): Record<string, unknown> {
+  if (obj == null || typeof obj !== "object") {
+    throw new TypeError("pick: first argument must be an object");
+  }
+  if (!Array.isArray(keys)) {
+    throw new TypeError("pick: second argument must be an array of keys");
+  }
   const out: Record<string, unknown> = {};
   for (const k of keys) {
     if (typeof k === "string" && k in (obj as Record<string, unknown>)) {
@@ -95,9 +99,13 @@ function helperPick(
 function helperOmit(
   obj: unknown,
   keys: unknown,
-): Record<string, unknown> | undefined {
-  if (obj == null || typeof obj !== "object" || !Array.isArray(keys))
-    return undefined;
+): Record<string, unknown> {
+  if (obj == null || typeof obj !== "object") {
+    throw new TypeError("omit: first argument must be an object");
+  }
+  if (!Array.isArray(keys)) {
+    throw new TypeError("omit: second argument must be an array of keys");
+  }
   const set = new Set(keys as string[]);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
@@ -111,28 +119,36 @@ function helperThrow(msg: unknown): never {
 }
 
 // ---------------------------------------------------------------------------
-// changed helper — works as both function and object-proxy via ctx injection
+// changed helper — callable function object with property access
 // ---------------------------------------------------------------------------
+
+interface ChangedFn {
+  (): boolean;
+  (name: string): boolean;
+  valueOf(): number;
+  [key: string]: boolean | ((...args: unknown[]) => unknown);
+}
 
 function buildChangedValue(
   changedMap: Record<string, boolean> | undefined,
-): unknown {
-  const anyChanged = changedMap
-    ? Object.values(changedMap).some(Boolean)
-    : false;
+): ChangedFn {
+  const map = changedMap ?? {};
+  const anyChanged = Object.values(map).some(Boolean);
 
-  if (!changedMap) return anyChanged;
+  const fn = function changed(name?: string): boolean {
+    if (name === undefined) return anyChanged;
+    return !!map[name];
+  } as ChangedFn;
 
-  // Return a proxy that is truthy/falsy based on anyChanged AND supports
-  // property access for individual step names.
-  // Jexl resolves `changed.foo` as property access on whatever `changed` is.
-  const proxy: Record<string, boolean> = { ...changedMap };
-  // Make the object itself coerce to boolean via valueOf
-  Object.defineProperty(proxy, "valueOf", {
-    value: () => (anyChanged ? 1 : 0),
-    enumerable: false,
-  });
-  return proxy;
+  // Expose each key as a boolean property
+  for (const [k, v] of Object.entries(map)) {
+    (fn as Record<string, unknown>)[k] = !!v;
+  }
+
+  // Coerce to boolean via valueOf
+  fn.valueOf = () => (anyChanged ? 1 : 0);
+
+  return fn;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +157,15 @@ function buildChangedValue(
 
 export function createEngine(): ExprEngine {
   const jexl = new Jexl();
+
+  // Mutable ref updated by prepareCtx before each eval so the jexl function
+  // (registered once via addFunction) always sees the current changed map.
+  let currentChangedMap: Record<string, boolean> = {};
+
+  jexl.addFunction("changed", (name?: string): boolean => {
+    if (name === undefined) return Object.values(currentChangedMap).some(Boolean);
+    return !!currentChangedMap[name];
+  });
 
   // Register functions
   jexl.addFunction("deepEqual", (a: unknown, b: unknown) =>
@@ -198,23 +223,13 @@ export function createEngine(): ExprEngine {
     helperHas(obj, path),
   );
 
-  // changed as a function: changed() or changed('stepName')
-  jexl.addFunction("changed", (name?: unknown) => {
-    // This fallback is for when changed() is called as a function outside
-    // context — the real logic runs through ctx.changed (see below).
-    // At evaluation time jexl resolves the identifier `changed` from ctx first,
-    // so this function form only fires if the user writes `changed(name)`.
-    // We can't access ctx here; callers must inject __changedMap into ctx and
-    // also set ctx.changed via buildChangedValue.
-    return name === undefined ? false : false;
-  });
-
   function prepareCtx(ctx: Record<string, unknown>): Record<string, unknown> {
+    const map = (ctx.__changedMap as Record<string, boolean> | undefined) ?? {};
+    // Update the closure ref so the jexl-registered changed() sees current map
+    currentChangedMap = map;
     const prepared = { ...ctx };
-    // Inject `changed` as a context value so `changed.stepName` works
-    prepared.changed = buildChangedValue(
-      ctx.__changedMap as Record<string, boolean> | undefined,
-    );
+    // Inject `changed` as a callable value so `changed.stepName` property access works
+    prepared.changed = buildChangedValue(map);
     // `firstRun` is expected to already be on ctx
     return prepared;
   }

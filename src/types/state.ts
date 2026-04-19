@@ -1,4 +1,4 @@
-import type { StepOutput, RunStatus, Halt, SoftError } from "./pipeline.js";
+import type { StepOutput, RunStatus, Halt, SoftError, StepStatus } from "./pipeline.js";
 
 // ── Persisted pipeline state ────────────────────────────────────────
 
@@ -54,7 +54,7 @@ export interface JournalStepEnd {
   event: "step_end";
   runId: string;
   step: string;
-  status: string;
+  status: StepStatus;
   endedAt: string;
 }
 

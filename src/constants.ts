@@ -30,7 +30,7 @@ export const MISSED_RUN_POLICIES = ["run_once", "skip", "run_all"] as const;
 export type MissedRunPolicy = (typeof MISSED_RUN_POLICIES)[number];
 
 export const JOURNAL_EVENTS = ["run_start", "step_start", "step_output", "step_end", "context_file", "run_end"] as const;
-export type JournalEvent = (typeof JOURNAL_EVENTS)[number];
+export type JournalEventType = (typeof JOURNAL_EVENTS)[number];
 
 export const HALT_REASONS = ["gate_falsy", "expr_throw", "timeout", "handler_throw", "aspyn_level"] as const;
 export type HaltReason = (typeof HALT_REASONS)[number];
@@ -51,3 +51,7 @@ export const EXIT_STEP_ERROR = 1;
 export const EXIT_ASPYN_ERROR = 2;
 export const EXIT_LOCK_HELD = 3;
 export const EXIT_USAGE = 4;
+
+// ── Shell ────────────────────────────────────────────────────────────
+export const SHELL_SIGKILL_GRACE_MS = 2_000;
+export const SHELL_TIMEOUT_EXIT_CODE = 124;

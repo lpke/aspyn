@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { DEFAULT_TIMEOUT_SECONDS, SHELL_SIGKILL_GRACE_MS, SHELL_TIMEOUT_EXIT_CODE } from "../constants.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -16,12 +17,6 @@ export interface ShellResult {
   exitCode: number;
 }
 
-// ── Constants ───────────────────────────────────────────────────────
-
-const DEFAULT_TIMEOUT_S = 30;
-const SIGKILL_GRACE_MS = 2_000;
-const TIMEOUT_EXIT_CODE = 124;
-
 // ── Shell executor ──────────────────────────────────────────────────
 
 export function execShell(options: ShellOptions): Promise<ShellResult> {
@@ -29,7 +24,7 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
     command,
     cwd,
     stdin,
-    timeout = DEFAULT_TIMEOUT_S,
+    timeout = DEFAULT_TIMEOUT_SECONDS,
     env,
   } = options;
 
@@ -74,7 +69,7 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
         } catch {
           // Process already exited — ignore.
         }
-      }, SIGKILL_GRACE_MS);
+      }, SHELL_SIGKILL_GRACE_MS);
     }, timeout * 1_000);
 
     child.on("close", (code) => {
@@ -84,7 +79,7 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
       resolve({
         stdout,
         stderr,
-        exitCode: killed ? TIMEOUT_EXIT_CODE : (code ?? 1),
+        exitCode: killed ? SHELL_TIMEOUT_EXIT_CODE : (code ?? 1),
       });
     });
   });

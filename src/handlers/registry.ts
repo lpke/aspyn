@@ -2,9 +2,7 @@ import type { PipelineContext } from "../types/pipeline.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export interface HandlerContext extends PipelineContext {
-  resolvedInput: unknown;
-}
+export type HandlerContext = PipelineContext;
 
 export interface Handler {
   name: string;

@@ -1,4 +1,5 @@
 import { register, type HandlerContext } from "./registry.js";
+import { DEFAULT_TIMEOUT_SECONDS } from "../constants.js";
 
 register({
   name: "http",
@@ -10,6 +11,8 @@ register({
       method?: string;
       headers?: Record<string, string>;
       body?: unknown;
+      throwOnError?: boolean;
+      timeout?: number;
     };
 
     const method = (opts.method ?? "GET").toUpperCase();
@@ -21,11 +24,30 @@ register({
       headers["content-type"] ??= "application/json";
     }
 
-    const res = await fetch(opts.url, {
-      method,
-      headers,
-      body: bodyStr,
-    });
+    const timeout = opts.timeout ?? DEFAULT_TIMEOUT_SECONDS;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout * 1000);
+
+    let res: Response;
+    try {
+      res = await fetch(opts.url, {
+        method,
+        headers,
+        body: bodyStr,
+        signal: controller.signal,
+      });
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`http: ${method} ${opts.url} timed out after ${timeout}s`);
+      }
+      throw err;
+    }
+    clearTimeout(timer);
+
+    if (opts.throwOnError === true && res.status >= 400) {
+      throw new Error(`http: ${method} ${opts.url} failed with status ${res.status}`);
+    }
 
     const text = await res.text();
     let body: unknown;

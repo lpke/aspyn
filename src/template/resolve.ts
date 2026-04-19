@@ -5,8 +5,8 @@ import type { ExprEngine } from "../expr/engine.js";
 // ---------------------------------------------------------------------------
 
 /** Matches `$VAR` or `${VAR}` where VAR is a simple identifier (env-style). */
-const ENV_BARE = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
-const ENV_BRACE = /\$\{([A-Za-z_][A-Za-z0-9_]*)}/g;
+const ENV_BARE = /(?<!\\)\$([A-Za-z_][A-Za-z0-9_]*)/g;
+const ENV_BRACE = /(?<!\\)\$\{([A-Za-z_][A-Za-z0-9_]*)}/g;
 
 /** Quick check: does the string contain any `${…}` template? */
 export function hasTemplate(str: string): boolean {
@@ -32,7 +32,7 @@ function walkSync(value: unknown, fn: (s: string) => string): unknown {
   return value;
 }
 
-async function walkAsync(value: unknown, fn: (s: string) => Promise<string>): Promise<unknown> {
+async function walkAsync(value: unknown, fn: (s: string) => Promise<unknown>): Promise<unknown> {
   if (typeof value === "string") return fn(value);
   if (Array.isArray(value)) return Promise.all(value.map((v) => walkAsync(v, fn)));
   if (value !== null && typeof value === "object") {
@@ -106,20 +106,22 @@ async function resolveString(
   s: string,
   engine: ExprEngine,
   ctx: Record<string, unknown>,
-): Promise<string> {
-  // Resolve innermost ${...} repeatedly until no templates remain.
+): Promise<unknown> {
+  // Whole-string single-template case: preserve the evaluated type.
+  const first = findInnermost(s);
+  if (first && first.start === 0 && first.end === s.length) {
+    const evaluated = await engine.evaluate(first.expr.trim(), ctx);
+    return evaluated;
+  }
+
+  // Multi-template / embedded: resolve innermost ${...} repeatedly, stringify.
   let result = s;
   const maxIterations = 64; // safety cap
   for (let iter = 0; iter < maxIterations; iter++) {
     const match = findInnermost(result);
     if (!match) break;
 
-    let evaluated: unknown;
-    try {
-      evaluated = await engine.evaluate(match.expr.trim(), ctx);
-    } catch {
-      evaluated = "";
-    }
+    const evaluated = await engine.evaluate(match.expr.trim(), ctx);
 
     const replacement = evaluated === undefined || evaluated === null ? "" : String(evaluated);
     result = result.slice(0, match.start) + replacement + result.slice(match.end);

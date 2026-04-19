@@ -8,13 +8,7 @@ register({
   async run(ctx: HandlerContext, input: unknown) {
     const { queries } = input as { queries: Record<string, string> };
 
-    // data is the object JSONPath queries run against
-    const source = ctx.input;
-    const data =
-      source && typeof source === "object" && source !== null
-        && "body" in source && source.body !== null && typeof source.body === "object"
-          ? source.body
-          : source;
+    const data = ctx.input;
 
     if (data === undefined || data === null) {
       throw new Error("jsonpath: ctx.input is empty; nothing to query");

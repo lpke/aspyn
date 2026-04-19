@@ -1,3 +1,7 @@
+import type { RunStatus, HaltReason } from "../constants.js";
+
+export type { RunStatus };
+
 // ── Step output ─────────────────────────────────────────────────────
 
 export type StepOutput = unknown;
@@ -8,12 +12,12 @@ export interface PipelineContext {
   input: Record<string, unknown>;
   steps: Record<string, StepOutput>;
   prev: Record<string, StepOutput> | null;
-  changed: boolean;
+  __changedMap: Record<string, boolean>;
   firstRun: boolean;
   meta: {
     pipeline: string;
     timestamp: string;
-    interval: number;
+    interval: string;
     run_number: number;
   };
 }
@@ -36,18 +40,9 @@ export interface HandlerResult {
 
 export interface Halt {
   atStep: string;
-  reason:
-    | "gate_falsy"
-    | "expr_throw"
-    | "timeout"
-    | "handler_throw"
-    | string;
+  reason: HaltReason;
 }
 
 // ── Step status ─────────────────────────────────────────────────────
 
 export type StepStatus = "ok" | "error" | "skipped" | "halted";
-
-// ── Run status ──────────────────────────────────────────────────────
-
-export type RunStatus = "ok" | "error" | "halted" | "interrupted" | "skipped";

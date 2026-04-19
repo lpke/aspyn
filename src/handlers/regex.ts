@@ -4,14 +4,16 @@ register({
   name: "regex",
   async run(ctx: HandlerContext, input: unknown) {
     const { patterns, source: sourceKey } = input as {
-      patterns: Record<string, string>;
+      patterns: Record<string, string | { pattern: string; flags?: string }>;
       source?: string;
     };
 
-    const data = ctx.resolvedInput as Record<string, unknown>;
+    const data = ctx.input as Record<string, unknown> | string;
     let source: string | undefined;
 
-    if (sourceKey !== undefined) {
+    if (typeof data === "string") {
+      source = data;
+    } else if (sourceKey !== undefined) {
       const val = (data as Record<string, unknown>)[sourceKey];
       if (typeof val === "string") source = val;
     } else {
@@ -29,8 +31,10 @@ register({
 
     const result: Record<string, string | null> = {};
 
-    for (const [key, pattern] of Object.entries(patterns)) {
-      const re = new RegExp(pattern);
+    for (const [key, entry] of Object.entries(patterns)) {
+      const re = typeof entry === "string"
+        ? new RegExp(entry)
+        : new RegExp(entry.pattern, entry.flags);
       const match = re.exec(source);
       if (!match) {
         result[key] = null;
