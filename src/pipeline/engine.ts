@@ -72,9 +72,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function normaliseStep(step: Step): StepObject {
+function normaliseStep(step: Step, index: number, fallbackName?: string): StepObject {
   if (typeof step === "string") {
-    return { name: step, type: step };
+    return { name: fallbackName ?? `step-${index}`, type: "shell", input: step };
   }
   return step;
 }
@@ -186,7 +186,7 @@ async function runPipelineOnce(
   crashed: boolean,
   crashResumeInput: unknown,
 ): Promise<OnceResult> {
-  const allSteps = cfg.pipeline.map(normaliseStep);
+const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
   const runNumber = (prevState?.runCount ?? 0) + 1;
 
   const fromIdx = resolveStepIndex(allSteps, opts.from, "from") ?? 0;
@@ -273,7 +273,7 @@ async function runPipelineOnce(
       }
 
       // Dry run: skip side-effect steps (§1)
-      const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? true;
+const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? false;
       if (opts.dry && effectiveSideEffect) {
         appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
         appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_SKIPPED, endedAt: nowIso() });
@@ -296,8 +296,6 @@ async function runPipelineOnce(
         const ctxPath = contextFilePath(name);
         fs.mkdirSync(path.dirname(ctxPath), { recursive: true });
         fs.writeFileSync(ctxPath, JSON.stringify(ctx));
-        ctx.__contextFile = ctxPath;
-        appendEvent(name, { type: "context_file", runId, path: ctxPath });
       }
 
       // Step-level retry (independent of pipeline-level retry)
@@ -309,6 +307,12 @@ async function runPipelineOnce(
 
       appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
       lastExecutedStep = stepDef.name;
+
+      if (stepDef.type === "shell") {
+        const ctxPath = contextFilePath(name);
+        ctx.__contextFile = ctxPath;
+        appendEvent(name, { type: "context_file", runId, path: ctxPath });
+      }
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (pipelineTimedOut) {
@@ -595,7 +599,7 @@ async function runOnErrorHook(
   failedStep: string,
   errorMessage: string,
 ): Promise<void> {
-  const hookDef = normaliseStep(hookStep);
+const hookDef = normaliseStep(hookStep, -1, "onError");
 
   const handler = lookup(hookDef.type);
   if (!handler) {

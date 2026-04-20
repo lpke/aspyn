@@ -2,6 +2,7 @@ import { register, type HandlerContext } from "./registry.js";
 import { execShell, parseJsonOutput } from "../execution/shell.js";
 import { ENV_CONTEXT_FILE } from "../constants.js";
 import { parseDurationMs } from "../duration.js";
+import { pipelineConfigDir } from "../paths.js";
 
 register({
   name: "shell",
@@ -25,7 +26,7 @@ register({
 
     const result = await execShell({
       command: opts.command,
-      cwd: process.cwd(),
+      cwd: pipelineConfigDir(ctx.meta.pipeline),
       stdin: JSON.stringify(ctx.input),
       timeout: timeoutSecs,
       env,
