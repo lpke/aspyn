@@ -24,7 +24,7 @@ import { createEngine, type ExprEngine } from "../expr/engine.js";
 import { resolveRuntime } from "../template/resolve.js";
 import { parseDurationMs } from "../duration.js";
 import { contextFilePath } from "../paths.js";
-import { logger } from "../logger.js";
+import { logger, initGlobalLogger } from "../logger.js";
 import type {
   PipelineConfig,
   StepObject,
@@ -263,11 +263,16 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
   let runError: { message: string; step: string | null; kind?: "pipeline_timeout" } | undefined;
   let lastValues: Record<string, StepOutput> = { ...(prevState?.lastValues ?? {}) };
 
-  // Pipeline-level timeout (independent clock)
+  // Pipeline-level timeout — a rejected promise that races against each step
   const pipelineTimeoutMs = parseDurationMs(cfg.timeout ?? globalCfg.defaultTimeout);
   let pipelineTimedOut = false;
+  let rejectPipelineTimeout: ((err: Error) => void) | undefined;
+  const pipelineTimeoutPromise = new Promise<never>((_, reject) => {
+    rejectPipelineTimeout = reject;
+  });
   const pipelineTimer = setTimeout(() => {
     pipelineTimedOut = true;
+    rejectPipelineTimeout?.(new Error(`__pipeline_timeout__`));
   }, pipelineTimeoutMs);
 
   try {
@@ -373,11 +378,20 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
             stepTimeoutMs,
             `step "${stepDef.name}"`,
           );
-          stepOutput = await result;
-          cancel();
+          // Race the step (with its own timeout) against the pipeline timeout
+          try {
+            stepOutput = await Promise.race([result, pipelineTimeoutPromise]);
+          } finally {
+            cancel();
+          }
           stepError = undefined;
           break;
         } catch (err) {
+          // Check if this was the pipeline timeout
+          if (pipelineTimedOut) {
+            stepError = err instanceof Error ? err : new Error(String(err));
+            break;
+          }
           stepError = err instanceof Error ? err : new Error(String(err));
           if (attempt < maxAttempts && effectiveRetry) {
             const delay = backoffDelay(effectiveRetry, attempt);
@@ -498,6 +512,11 @@ export async function runPipeline(
 ): Promise<RunResult> {
   const startedAt = nowIso();
   const startMs = Date.now();
+
+  // --verbose overrides log level
+  if (opts.verbose) {
+    initGlobalLogger({ level: "debug" });
+  }
 
   // 1. Load configs
   const cfg = await loadPipelineConfig(name);
