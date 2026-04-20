@@ -15,6 +15,7 @@ import {
 } from './constants.js';
 import { logger } from './logger.js';
 import { output } from './output.js';
+import { UsageError } from './errors.js';
 import {
   pipelineConfigDir,
   pipelineConfigPath,
@@ -173,12 +174,11 @@ async function cmdRun(args: ParsedArgs): Promise<number> {
         anyError = true;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // --from referencing a non-existent step is a usage error
-      if (msg.startsWith('--from:') || (msg.includes('--from') && msg.includes('unknown step'))) {
-        output.printHelp(msg);
+      if (err instanceof UsageError) {
+        output.printHelp(err.message);
         return EXIT_USAGE;
       }
+      const msg = err instanceof Error ? err.message : String(err);
       logger.error(`${name}: ${msg}`);
       anyError = true;
     }

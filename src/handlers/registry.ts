@@ -2,7 +2,7 @@ import type { PipelineContext } from '../types/pipeline.js';
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type HandlerContext = PipelineContext;
+export type HandlerContext = PipelineContext & { signal: AbortSignal };
 
 export interface Handler {
   name: string;

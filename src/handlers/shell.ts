@@ -1,7 +1,6 @@
 import { register, type HandlerContext } from './registry.js';
 import { execShell, parseJsonOutput } from '../execution/shell.js';
 import { ENV_CONTEXT_FILE } from '../constants.js';
-import { parseDurationMs } from '../duration.js';
 import { pipelineConfigDir } from '../paths.js';
 
 register({
@@ -12,7 +11,7 @@ register({
     const opts =
       typeof input === 'string'
         ? { command: input }
-        : (input as { command: string; timeout?: string | number });
+        : (input as { command: string });
 
     const env: Record<string, string> = {};
     const ctxFile = (ctx as unknown as Record<string, unknown>).__contextFile;
@@ -20,16 +19,11 @@ register({
       env[ENV_CONTEXT_FILE] = ctxFile;
     }
 
-    const timeoutSecs =
-      opts.timeout !== undefined
-        ? parseDurationMs(opts.timeout) / 1000
-        : undefined;
-
     const result = await execShell({
       command: opts.command,
       cwd: pipelineConfigDir(ctx.meta.pipeline),
       stdin: JSON.stringify(ctx.input),
-      timeout: timeoutSecs,
+      signal: ctx.signal,
       env,
     });
 

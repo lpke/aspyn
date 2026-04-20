@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import {
-  DEFAULT_TIMEOUT_SECONDS,
   SHELL_SIGKILL_GRACE_MS,
   SHELL_TIMEOUT_EXIT_CODE,
 } from '../constants.js';
@@ -11,7 +10,7 @@ export interface ShellOptions {
   command: string;
   cwd: string;
   stdin?: string;
-  timeout?: number;
+  signal?: AbortSignal;
   env?: Record<string, string>;
 }
 
@@ -28,7 +27,7 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
     command,
     cwd,
     stdin,
-    timeout = DEFAULT_TIMEOUT_SECONDS,
+    signal,
     env,
   } = options;
 
@@ -43,7 +42,6 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
     let stderr = '';
     let killed = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
-    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -62,8 +60,9 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
       child.stdin.end();
     }
 
-    // Timeout handling: SIGTERM → wait 2 s → SIGKILL.
-    timeoutTimer = setTimeout(() => {
+    // Kill ladder driven by AbortSignal: SIGTERM → grace → SIGKILL.
+    const onAbort = () => {
+      if (killed) return;
       killed = true;
       child.kill('SIGTERM');
 
@@ -74,11 +73,21 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
           // Process already exited — ignore.
         }
       }, SHELL_SIGKILL_GRACE_MS);
-    }, timeout * 1_000);
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+      } else {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
 
     child.on('close', (code) => {
-      clearTimeout(timeoutTimer);
       clearTimeout(killTimer);
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
 
       resolve({
         stdout,

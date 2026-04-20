@@ -616,6 +616,17 @@ export function validatePipeline(
               );
             }
           }
+          // Reject timeout inside handler input — use step.timeout instead
+          if (
+            'timeout' in inputObj &&
+            (step.type === 'shell' || step.type === 'http' || step.type === 'webpage')
+          ) {
+            err(
+              'INPUT_TIMEOUT_REJECTED',
+              `step "${step.name}" has timeout inside input; use step-level "timeout" instead`,
+              ['pipeline', String(i), 'input', 'timeout'],
+            );
+          }
         }
       }
     }

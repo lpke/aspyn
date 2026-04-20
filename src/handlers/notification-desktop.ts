@@ -63,7 +63,7 @@ register({
       };
     }
 
-    const result = await execShell({ command, cwd: process.cwd(), timeout: 10 });
+    const result = await execShell({ command, cwd: process.cwd(), signal: AbortSignal.timeout(10_000) });
 
     if (result.exitCode !== 0) {
       const output = (result.stderr || result.stdout).toLowerCase();

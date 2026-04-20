@@ -16,7 +16,6 @@ import {
   hydrateStepsFromJournal,
   readJournal,
   truncateJournalToRunStart,
-  lastStepOutputFromJournal,
 } from '../state/journal.js';
 import { appendHistory } from '../state/history.js';
 import { lookup } from '../handlers/registry.js';
@@ -26,6 +25,7 @@ import { resolveRuntime } from '../template/resolve.js';
 import { parseDurationMs } from '../duration.js';
 import { contextFilePath } from '../paths.js';
 import { logger, initGlobalLogger } from '../logger.js';
+import { UsageError } from '../errors.js';
 import type {
   PipelineConfig,
   StepObject,
@@ -45,6 +45,7 @@ import type {
 } from '../types/pipeline.js';
 import { isHandlerHalt } from '../types/pipeline.js';
 import type { PipelineState, StateHistoryEntry } from '../types/state.js';
+import type { JournalEvent } from '../types/state.js';
 import {
   RUN_STATUS_OK,
   RUN_STATUS_ERROR,
@@ -123,7 +124,7 @@ function resolveStepIndex(
   if (ref === undefined) return undefined;
   if (typeof ref === 'number') {
     if (ref < 0 || ref >= steps.length) {
-      throw new Error(
+      throw new UsageError(
         `--${fieldName} index ${ref} out of range (0..${steps.length - 1})`,
       );
     }
@@ -131,7 +132,7 @@ function resolveStepIndex(
   }
   const idx = steps.findIndex((s) => s.name === ref);
   if (idx === -1)
-    throw new Error(`--${fieldName} references unknown step "${ref}"`);
+    throw new UsageError(`--${fieldName} references unknown step "${ref}"`);
   return idx;
 }
 
@@ -164,6 +165,37 @@ function pipelineTimeoutError(stepName: string | null, ms: number) {
     step: stepName,
     kind: 'pipeline_timeout' as const,
   };
+}
+
+// ── Resume hydration helper (Issue 2) ──────────────────────────────
+
+function hydrateForResume(
+  resumeIdx: number,
+  journalEvents: JournalEvent[],
+  prevState: PipelineState | null,
+  allSteps: StepObject[],
+): { hydratedSteps: Record<string, unknown>; resumeInput: unknown } {
+  // 1. Hydrate from journal if available, else from prevState.lastValues
+  const hydratedSteps: Record<string, unknown> =
+    journalEvents.length > 0
+      ? hydrateStepsFromJournal(journalEvents)
+      : { ...(prevState?.lastValues ?? {}) };
+
+  // 3. Compute resumeInput
+  if (resumeIdx === 0) {
+    return { hydratedSteps, resumeInput: {} };
+  }
+
+  const predecessorName = allSteps[resumeIdx - 1].name;
+
+  // 4. Predecessor must be in hydrated steps
+  if (!(predecessorName in hydratedSteps)) {
+    throw new UsageError(
+      `predecessor step "${predecessorName}" was not tracked; set track: true on it to use --from/--continue here`,
+    );
+  }
+
+  return { hydratedSteps, resumeInput: hydratedSteps[predecessorName] };
 }
 
 // ── Crash recovery prompt ───────────────────────────────────────────
@@ -216,20 +248,8 @@ async function runPipelineOnce(
   const untilIdx =
     resolveStepIndex(allSteps, opts.until, 'until') ?? allSteps.length - 1;
 
-  // --from predecessor validation: ensure tracked predecessors are hydrated
-  if (opts.from !== undefined && fromIdx > 0 && !opts.replaySideEffects) {
-    for (let i = 0; i < fromIdx; i++) {
-      const step = allSteps[i];
-      const handler = lookup(step.type);
-      const tracked = isTracked(step, handler, i, allSteps.length);
-      if (tracked && !(step.name in crashResumeSteps)) {
-        throw new Error(
-          `--from: predecessor step "${step.name}" (index ${i}) has no recorded output in the journal. ` +
-            `Ensure it has track: true and a prior run completed it.`,
-        );
-      }
-    }
-  }
+  // --from predecessor validation: single-predecessor check (Issue 2)
+  // The hydrateForResume helper already validated the predecessor is present.
 
   // --from: warn about skipped side-effect steps; --replay-side-effects overrides
   const effectiveFromIdx =
@@ -252,6 +272,26 @@ async function runPipelineOnce(
 
   const engine = createEngine();
 
+  // Pipeline-level timeout — AbortSignal-based (Issue 1)
+  const pipelineTimeoutMs = parseDurationMs(
+    cfg.timeout ?? globalCfg.defaultTimeout,
+  );
+  let pipelineTimedOut = false;
+  const pipelineAc = new AbortController();
+  const pipelineTimer = setTimeout(() => {
+    pipelineTimedOut = true;
+    pipelineAc.abort();
+  }, pipelineTimeoutMs);
+  const pipelineSignal = pipelineAc.signal;
+  // Build a rejected-promise for the existing race pattern
+  let rejectPipelineTimeout: ((err: Error) => void) | undefined;
+  const pipelineTimeoutPromise = new Promise<never>((_, reject) => {
+    rejectPipelineTimeout = reject;
+  });
+  pipelineSignal.addEventListener('abort', () => {
+    rejectPipelineTimeout?.(new Error('__pipeline_timeout__'));
+  }, { once: true });
+
   const ctx: PipelineContext & Record<string, unknown> = {
     input: crashResumeInput,
     steps: { ...crashResumeSteps },
@@ -264,6 +304,7 @@ async function runPipelineOnce(
       interval: cfg.interval ?? null,
       run_number: runNumber,
     },
+    signal: pipelineSignal,
     __engine: engine,
   };
   const softErrors: SoftError[] = [];
@@ -276,20 +317,6 @@ async function runPipelineOnce(
   let lastValues: Record<string, StepOutput> = {
     ...(prevState?.lastValues ?? {}),
   };
-
-  // Pipeline-level timeout — a rejected promise that races against each step
-  const pipelineTimeoutMs = parseDurationMs(
-    cfg.timeout ?? globalCfg.defaultTimeout,
-  );
-  let pipelineTimedOut = false;
-  let rejectPipelineTimeout: ((err: Error) => void) | undefined;
-  const pipelineTimeoutPromise = new Promise<never>((_, reject) => {
-    rejectPipelineTimeout = reject;
-  });
-  const pipelineTimer = setTimeout(() => {
-    pipelineTimedOut = true;
-    rejectPipelineTimeout?.(new Error(`__pipeline_timeout__`));
-  }, pipelineTimeoutMs);
 
   try {
     let skipUntilAfterCrash =
@@ -398,16 +425,29 @@ async function runPipelineOnce(
         buildExprContext(ctx),
       );
 
-      // Step timeout: stepDef.timeout → globalCfg.defaultTimeout (independent of pipeline timeout)
+      // Step timeout: build combined AbortSignal (Issue 1)
       const stepTimeoutMs = parseDurationMs(
         stepDef.timeout ?? globalCfg.defaultTimeout,
       );
+      const stepSignal = AbortSignal.timeout(stepTimeoutMs);
+      const combinedSignal = AbortSignal.any([stepSignal, pipelineSignal]);
+      ctx.signal = combinedSignal;
 
-      // Write context file for shell steps
+      // Write sanitised context file for shell steps (Issue 5)
       if (stepDef.type === 'shell') {
         const ctxPath = contextFilePath(name);
         fs.mkdirSync(path.dirname(ctxPath), { recursive: true });
-        fs.writeFileSync(ctxPath, JSON.stringify(ctx));
+        const safeCtx: Record<string, unknown> = {
+          input: ctx.input,
+          steps: ctx.steps,
+          prev: ctx.prev,
+          changed: ctx.changed,
+          firstRun: ctx.firstRun,
+          meta: ctx.meta,
+        };
+        if (ctx.__error != null) safeCtx.__error = ctx.__error;
+        if (ctx.__failed != null) safeCtx.__failed = ctx.__failed;
+        fs.writeFileSync(ctxPath, JSON.stringify(safeCtx));
       }
 
       // Step-level retry (independent of pipeline-level retry)
@@ -690,7 +730,7 @@ export async function runPipeline(
   // Validate conflicting flags
   if (opts.from !== undefined && opts.continueFromCrash) {
     await releaseLock(lock);
-    throw new Error('--from and --continue are conflicting options');
+    throw new UsageError('--from and --continue are conflicting options');
   }
 
   // 3. Check crashed run
@@ -709,30 +749,35 @@ export async function runPipeline(
     }
   }
 
-  // Determine crash-resume context
+  // 4. Load state (before hydration so hydrateForResume can use it)
+  const prevState = await readState(name);
+
+  // Determine crash-resume context (Issue 2 — shared hydrateForResume helper)
   let crashResumeSteps: Record<string, unknown> = {};
   let crashResumeAfter: string | null = null;
   let crashResumeInput: unknown = {};
   if (crashed && opts.continueFromCrash) {
     const events = await readJournal(name);
-    crashResumeSteps = hydrateStepsFromJournal(events);
+    const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
     crashResumeAfter = lastCompletedStep(events);
-    crashResumeInput = lastStepOutputFromJournal(events);
+    const resumeIdx = crashResumeAfter !== null
+      ? allSteps.findIndex((s) => s.name === crashResumeAfter) + 1
+      : 0;
+    const result = hydrateForResume(resumeIdx, events, prevState, allSteps);
+    crashResumeSteps = result.hydratedSteps;
+    crashResumeInput = result.resumeInput;
     await clearJournal(name);
   }
 
-  // --from hydration: read journal to seed steps and input
+  // --from hydration: use shared helper
   if (opts.from !== undefined && !crashed) {
     const events = await readJournal(name);
-    if (events.length > 0) {
-      const hydrated = hydrateStepsFromJournal(events);
-      crashResumeSteps = hydrated;
-      crashResumeInput = lastStepOutputFromJournal(events);
-    }
+    const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
+    const fromIdx = resolveStepIndex(allSteps, opts.from, 'from') ?? 0;
+    const result = hydrateForResume(fromIdx, events, prevState, allSteps);
+    crashResumeSteps = result.hydratedSteps;
+    crashResumeInput = result.resumeInput;
   }
-
-  // 4. Load state
-  const prevState = await readState(name);
 
   // 5. Pipeline-level retry loop
   const pipelineRetry = cfg.retry;

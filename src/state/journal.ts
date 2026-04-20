@@ -132,10 +132,4 @@ export async function truncateJournalToRunStart(
   fss.writeFileSync(p, JSON.stringify(keep) + '\n');
 }
 
-export function lastStepOutputFromJournal(events: JournalEvent[]): unknown {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e.type === 'step_output') return (e as { output: unknown }).output;
-  }
-  return {};
-}
+
