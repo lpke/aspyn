@@ -305,6 +305,7 @@ async function runPipelineOnce(
       run_number: runNumber,
     },
     signal: pipelineSignal,
+    stepTimeoutMs: pipelineTimeoutMs,
     __engine: engine,
   };
   const softErrors: SoftError[] = [];
@@ -432,11 +433,14 @@ async function runPipelineOnce(
       const stepSignal = AbortSignal.timeout(stepTimeoutMs);
       const combinedSignal = AbortSignal.any([stepSignal, pipelineSignal]);
       ctx.signal = combinedSignal;
+      ctx.stepTimeoutMs = stepTimeoutMs;
 
       // Write sanitised context file for shell steps (Issue 5)
       if (stepDef.type === 'shell') {
         const ctxPath = contextFilePath(name);
         fs.mkdirSync(path.dirname(ctxPath), { recursive: true });
+        // Journal the intent before the disk write (Issue 3 — write-ahead-log order)
+        appendEvent(name, { type: 'context_file', runId, path: ctxPath });
         const safeCtx: Record<string, unknown> = {
           input: ctx.input,
           steps: ctx.steps,
@@ -468,7 +472,6 @@ async function runPipelineOnce(
       if (stepDef.type === 'shell') {
         const ctxPath = contextFilePath(name);
         ctx.__contextFile = ctxPath;
-        appendEvent(name, { type: 'context_file', runId, path: ctxPath });
       }
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -599,6 +602,8 @@ async function runPipelineOnce(
               ctx,
               stepDef.name,
               stepError.message,
+              globalCfg,
+              pipelineSignal,
             );
           }
           break;
@@ -681,6 +686,8 @@ async function runPipelineOnce(
         ctx,
         runError.step ?? '(pipeline)',
         runError.message,
+        globalCfg,
+        pipelineSignal,
       );
     }
   } finally {
@@ -727,17 +734,26 @@ export async function runPipeline(
   // Generate runId after lock acquisition (§17)
   const runId = generateRunId();
 
-  // Validate conflicting flags
+  // Validate conflicting flags (initial check)
   if (opts.from !== undefined && opts.continueFromCrash) {
     await releaseLock(lock);
     throw new UsageError('--from and --continue are conflicting options');
   }
 
-  // 3. Check crashed run
-  const crashed = await hasCrashedRun(name);
+  // 3. Load state (before crash handling so hydrateForResume can use it)
+  const prevState = await readState(name);
+
+  // 4. Check crashed run
+  let crashed = await hasCrashedRun(name);
   if (crashed) {
-    if (opts.resetCrash) {
+    if (opts.from !== undefined && !opts.continueFromCrash) {
+      // --from on a crashed prior run: discard crash journal
+      logger.warn('--from on a crashed prior run: discarding crash journal');
       await clearJournal(name);
+      crashed = false;
+    } else if (opts.resetCrash) {
+      await clearJournal(name);
+      crashed = false;
     } else if (!opts.continueFromCrash) {
       // TTY prompt
       const choice = await promptCrashRecovery();
@@ -745,38 +761,46 @@ export async function runPipeline(
         opts = { ...opts, continueFromCrash: true };
       } else {
         await clearJournal(name);
+        crashed = false;
       }
     }
   }
 
-  // 4. Load state (before hydration so hydrateForResume can use it)
-  const prevState = await readState(name);
+  // Re-assert conflict after prompt (prompt could have set continueFromCrash)
+  if (opts.from !== undefined && opts.continueFromCrash) {
+    await releaseLock(lock);
+    throw new UsageError('--from and --continue are conflicting options');
+  }
 
-  // Determine crash-resume context (Issue 2 — shared hydrateForResume helper)
+  // 5. Hydration (single site for both --from and --continue)
   let crashResumeSteps: Record<string, unknown> = {};
   let crashResumeAfter: string | null = null;
   let crashResumeInput: unknown = {};
-  if (crashed && opts.continueFromCrash) {
-    const events = await readJournal(name);
-    const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
-    crashResumeAfter = lastCompletedStep(events);
-    const resumeIdx = crashResumeAfter !== null
-      ? allSteps.findIndex((s) => s.name === crashResumeAfter) + 1
+
+  const allStepsForHydration = cfg.pipeline.map((s, i) => normaliseStep(s, i));
+  let resumeIdx: number | null = null;
+  let hydrateEvents: JournalEvent[] = [];
+
+  if (opts.continueFromCrash && crashed) {
+    hydrateEvents = await readJournal(name);
+    crashResumeAfter = lastCompletedStep(hydrateEvents);
+    resumeIdx = crashResumeAfter !== null
+      ? allStepsForHydration.findIndex((s) => s.name === crashResumeAfter) + 1
       : 0;
-    const result = hydrateForResume(resumeIdx, events, prevState, allSteps);
-    crashResumeSteps = result.hydratedSteps;
-    crashResumeInput = result.resumeInput;
-    await clearJournal(name);
+  } else if (opts.from !== undefined) {
+    hydrateEvents = await readJournal(name);
+    resumeIdx = resolveStepIndex(allStepsForHydration, opts.from, 'from') ?? 0;
   }
 
-  // --from hydration: use shared helper
-  if (opts.from !== undefined && !crashed) {
-    const events = await readJournal(name);
-    const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
-    const fromIdx = resolveStepIndex(allSteps, opts.from, 'from') ?? 0;
-    const result = hydrateForResume(fromIdx, events, prevState, allSteps);
+  if (resumeIdx !== null) {
+    const result = hydrateForResume(resumeIdx, hydrateEvents, prevState, allStepsForHydration);
     crashResumeSteps = result.hydratedSteps;
     crashResumeInput = result.resumeInput;
+  }
+
+  // Clear journal after hydration for crash-resume
+  if (opts.continueFromCrash && crashed) {
+    await clearJournal(name);
   }
 
   // 5. Pipeline-level retry loop
@@ -903,6 +927,8 @@ async function runOnErrorHook(
   ctx: PipelineContext & Record<string, unknown>,
   failedStep: string,
   errorMessage: string,
+  globalCfg: GlobalConfig,
+  pipelineSignal: AbortSignal,
 ): Promise<void> {
   const hookDef = normaliseStep(hookStep, -1, 'onError');
 
@@ -912,9 +938,20 @@ async function runOnErrorHook(
     return;
   }
 
-  // Build hook context with error info
+  // Build a fresh signal for the hook (Issue 1b)
+  const hookTimeoutMs = parseDurationMs(
+    hookDef.timeout ?? globalCfg.defaultTimeout,
+  );
+  const hookSignal = AbortSignal.any([
+    AbortSignal.timeout(hookTimeoutMs),
+    pipelineSignal,
+  ]);
+
+  // Build hook context with error info and fresh signal
   const hookCtx: PipelineContext & Record<string, unknown> = {
     ...ctx,
+    signal: hookSignal,
+    stepTimeoutMs: hookTimeoutMs,
     __error: { step: failedStep, message: errorMessage },
     __failed: failedStep,
   };

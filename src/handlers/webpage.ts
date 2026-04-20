@@ -37,14 +37,7 @@ register({
     try {
       const page = await browser.newPage();
 
-      // Compute remaining deadline from the signal (AbortSignal.timeout stores it internally;
-      // we can't extract it, but we can use a reasonable large default since the outer
-      // withTimeout + signal will enforce the real deadline).
-      // Playwright's default timeout applies to goto/waitForSelector/evaluate.
-      const remainingMs = 30_000; // fallback; real enforcement is via the signal
-      // If the signal has a reason with a timeout hint, we'd use it. For now, set a generous
-      // playwright-internal timeout; the AbortSignal onAbort will hard-close the browser.
-      page.setDefaultTimeout(remainingMs);
+      page.setDefaultTimeout(ctx.stepTimeoutMs);
 
       await page.goto(url);
 

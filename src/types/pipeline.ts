@@ -20,6 +20,7 @@ export interface PipelineContext {
   changed: Record<string, boolean>;
   firstRun: boolean;
   signal: AbortSignal;
+  stepTimeoutMs: number;
   meta: {
     pipeline: string;
     timestamp: string;
