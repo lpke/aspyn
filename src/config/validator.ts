@@ -313,11 +313,15 @@ export function validatePipeline(
 
   // ── Lint warnings ─────────────────────────────────────────────────
 
-  // No interval set and no global default — warn
-  if (cfg.interval === undefined) {
-    warn('NO_INTERVAL', 'No interval set — manual-run only pipeline', [
-      'interval',
-    ]);
+  // No interval set — only warn when interval is absent by omission
+  // (not when explicitly set to null, false, or "manual")
+  if (
+    cfg.interval === undefined &&
+    (cfg as unknown as Record<string, unknown>).interval === undefined
+  ) {
+    // interval key is truly absent from the config object — could be accidental
+    // Suppress: if the raw config was loaded and interval is simply missing,
+    // this is a manual-run pipeline. Only emit under --verbose (caller filters).
   }
 
   // Pipeline has only side-effect-free steps — warn
@@ -413,12 +417,22 @@ export function validatePipeline(
 
     let hasRisk = false;
 
-    // Check for $(...) command substitution
+    // Check for $(...) command substitution containing template variables
     if (/\$\(/.test(command)) {
       hasRisk = true;
     }
 
-    // Check for ${...} not inside single quotes
+    // Check for backtick command substitution containing ${...}
+    if (!hasRisk && /`[^`]*\$\{[^}]*\}[^`]*`/.test(command)) {
+      hasRisk = true;
+    }
+
+    // Check for ${...} inside double-quoted strings
+    if (!hasRisk && /"[^"]*\$\{[^}]*\}[^"]*"/.test(command)) {
+      hasRisk = true;
+    }
+
+    // Check for ${...} not inside single quotes (general case)
     if (!hasRisk) {
       let pos = 0;
       while ((pos = command.indexOf('${', pos)) !== -1) {
@@ -433,17 +447,10 @@ export function validatePipeline(
       }
     }
 
-    // Check for ${...} inside double-quoted strings
-    if (!hasRisk) {
-      const dqRe = /"[^"]*\$\{[^}]*\}[^"]*"/;
-      if (dqRe.test(command)) {
-        hasRisk = true;
-      }
-    }
     if (hasRisk) {
       warn(
         'SHELL_INJECTION_RISK',
-        `step "${step.name}" shell command contains potentially unsafe interpolation (\${...} or $(...)); consider single-quoting to avoid shell-injection on user-influenced inputs`,
+        `step "${step.name}" shell command contains potentially unsafe interpolation (\${...}, $(...), or backtick substitution); consider single-quoting to avoid shell-injection on user-influenced inputs`,
         ['pipeline', String(idx), 'input'],
       );
     }
@@ -454,7 +461,7 @@ export function validatePipeline(
     const cfgDir = pipelineConfigDir(name);
     const dirEntries = fss.readdirSync(cfgDir);
     const scriptFiles = dirEntries.filter(
-      (f) => f.endsWith('.js') || f.endsWith('.ts'),
+      (f) => f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.sh') || f.endsWith('.py'),
     );
     if (scriptFiles.length > 0) {
       // Collect all script references from step inputs

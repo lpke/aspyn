@@ -21,6 +21,7 @@ import {
 import { appendHistory } from '../state/history.js';
 import { lookup } from '../handlers/registry.js';
 import { createEngine, type ExprEngine } from '../expr/engine.js';
+import { buildExprContext } from '../expr/context.js';
 import { resolveRuntime } from '../template/resolve.js';
 import { parseDurationMs } from '../duration.js';
 import { contextFilePath } from '../paths.js';
@@ -113,19 +114,6 @@ function isTracked(
   if (step.track !== undefined) return step.track;
   const sideEffect = step.sideEffect ?? handler?.sideEffectDefault ?? false;
   return sideEffect || index === total - 1;
-}
-
-function buildExprContext(ctx: PipelineContext): Record<string, unknown> {
-  return {
-    input: ctx.input,
-    steps: ctx.steps,
-    prev: ctx.prev,
-    firstRun: ctx.firstRun,
-    meta: ctx.meta,
-    changed: ctx.changed,
-    __failed: (ctx as unknown as Record<string, unknown>).__failed,
-    __error: (ctx as unknown as Record<string, unknown>).__error,
-  };
 }
 
 function resolveStepIndex(

@@ -1,36 +1,28 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
-import fss from 'node:fs';
-import path from 'node:path';
 import chalk from 'chalk';
 
 import {
-  APP_NAME,
   EXIT_SUCCESS,
   EXIT_STEP_ERROR,
   EXIT_ASPYN_ERROR,
   EXIT_LOCK_HELD,
   EXIT_USAGE,
   CANONICAL_STEP_NAMES,
-  CONFIG_FILE,
   RUN_STATUS_OK,
   RUN_STATUS_INTERRUPTED,
 } from './constants.js';
 import { logger } from './logger.js';
 import { output } from './output.js';
 import {
-  configRoot,
   pipelineConfigDir,
   pipelineConfigPath,
   runLogPath,
   actionLogPath,
-  stateJsonPath,
-  stateHistoryPath,
 } from './paths.js';
 import {
   loadPipelineConfig,
-  loadGlobalConfig,
   listPipelineNames,
 } from './config/loader.js';
 import { validateAll } from './config/validator.js';
@@ -40,7 +32,6 @@ import { readHistory, clearHistory } from './state/history.js';
 import { startDaemon } from './daemon.js';
 import type { RunOptions } from './types/pipeline.js';
 import { parseDurationMs } from './duration.js';
-import type { PipelineState } from './types/state.js';
 
 // ── Duration shorthand resolver ──────────────────────────────────────
 
@@ -122,7 +113,7 @@ Commands:
   aspyn state clear <name> [--step <s>] [--wipe-history]
   aspyn log <name> [--action | --state]
   aspyn validate [--format json]
-  aspyn init <name>
+  aspyn init <name> [--manual | --no-interval]
 `;
 
 // ── Commands ────────────────────────────────────────────────────────
@@ -182,9 +173,13 @@ async function cmdRun(args: ParsedArgs): Promise<number> {
         anyError = true;
       }
     } catch (err) {
-      logger.error(
-        `${name}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      // --from referencing a non-existent step is a usage error
+      if (msg.includes('--from') && msg.includes('unknown step')) {
+        output.printHelp(msg);
+        return EXIT_USAGE;
+      }
+      logger.error(`${name}: ${msg}`);
       anyError = true;
     }
   }
@@ -421,6 +416,11 @@ async function cmdLog(args: ParsedArgs): Promise<number> {
   const showAction = flagBool(args, 'action');
   const showState = flagBool(args, 'state');
 
+  if (showAction && showState) {
+    output.printHelp('Cannot use --action and --state together');
+    return EXIT_USAGE;
+  }
+
   if (showState) {
     // Delegate to cmdStateHistory with the pipeline name
     const histArgs: ParsedArgs = { positional: [name], flags: {} };
@@ -496,6 +496,8 @@ async function cmdInit(args: ParsedArgs): Promise<number> {
     /* ok, doesn't exist */
   }
 
+  const manual = flagBool(args, 'manual') || flagBool(args, 'no-interval');
+
   const steps = CANONICAL_STEP_NAMES.map((s) => {
     const type =
       s === 'input'
@@ -523,10 +525,10 @@ async function cmdInit(args: ParsedArgs): Promise<number> {
     return { name: s, type, input };
   });
 
-  const config = {
+  const config: Record<string, unknown> = {
     name,
     description: `${name} pipeline`,
-    interval: '1h',
+    ...(manual ? {} : { interval: '1h' }),
     pipeline: steps,
   };
 

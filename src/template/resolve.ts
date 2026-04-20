@@ -4,9 +4,10 @@ import type { ExprEngine } from '../expr/engine.js';
 // Pattern helpers
 // ---------------------------------------------------------------------------
 
-/** Matches `$VAR` or `${VAR}` where VAR is a simple identifier (env-style). */
-const ENV_BARE = /(?<!\\)\$([A-Za-z_][A-Za-z0-9_]*)/g;
-const ENV_BRACE = /(?<!\\)\$\{([A-Za-z_][A-Za-z0-9_]*)}/g;
+/** Matches `$VAR` or `${VAR}` where VAR is a simple identifier (env-style).
+ *  Uses a negative lookbehind for odd number of backslashes. */
+const ENV_BARE = /(?<!(?:^|[^\\])(?:\\\\)*\\)\$([A-Za-z_][A-Za-z0-9_]*)/g;
+const ENV_BRACE = /(?<!(?:^|[^\\])(?:\\\\)*\\)\$\{([A-Za-z_][A-Za-z0-9_]*)}/g;
 
 /** Quick check: does the string contain any `${…}` template? */
 export function hasTemplate(str: string): boolean {
@@ -63,8 +64,11 @@ export function resolveEnv(value: unknown): unknown {
     result = result.replace(ENV_BARE, (match, name: string) =>
       process.env[name] !== undefined ? process.env[name]! : match,
     );
-    // Replace escaped \$ with literal $
+    // Unescape: \\$ → \$ (escaped backslash before dollar)
+    // then \$ → $ (escaped dollar)
+    result = result.replace(/\\\\\$/g, '\0ESCAPED_BS_DOLLAR\0');
     result = result.replace(/\\\$/g, '$');
+    result = result.replace(/\0ESCAPED_BS_DOLLAR\0/g, '\\$');
     return result;
   });
 }
