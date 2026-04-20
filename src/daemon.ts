@@ -76,6 +76,7 @@ async function daemonCrashRecovery(
 interface ScheduledPipeline {
   task: cron.ScheduledTask;
   running: Promise<void> | null;
+  lastRunAt: number;
 }
 
 // ── Public API ──────────────────────────────────────────────────────
@@ -118,7 +119,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
     // Run crash recovery before first schedule
     await daemonCrashRecovery(name, globalCfg.missedRunPolicy);
 
-    const entry: ScheduledPipeline = { task: null!, running: null };
+    const entry: ScheduledPipeline = { task: null!, running: null, lastRunAt: Date.now() };
 
     const task = cron.schedule(cronExpr, async () => {
       if (shuttingDown) return;
@@ -128,8 +129,19 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
       }
       entry.running = (async () => {
         try {
-          logger.info(`[${name}] Running pipeline`);
-          await runPipeline(name);
+          const intervalMs = parseDurationMs(cfg.interval!);
+          const now = Date.now();
+          let timesToRun = 1;
+          if (globalCfg.missedRunPolicy === 'run_all' && entry.lastRunAt > 0) {
+            const elapsed = now - entry.lastRunAt;
+            timesToRun = Math.max(1, Math.floor(elapsed / intervalMs));
+          }
+          for (let r = 0; r < timesToRun; r++) {
+            if (shuttingDown) break;
+            logger.info(`[${name}] Running pipeline${timesToRun > 1 ? ` (${r + 1}/${timesToRun})` : ''}`);
+            await runPipeline(name);
+          }
+          entry.lastRunAt = Date.now();
         } catch (err) {
           logger.error(`[${name}] Pipeline error: ${(err as Error).message}`);
         } finally {
@@ -152,7 +164,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
     await schedulePipeline(name);
   }
 
-  logger.info(`Daemon started. ${scheduled.size} pipeline(s) scheduled.`);
+  logger.info(`Watching ${scheduled.size} pipelines`);
 
   // ── Periodic re-scan for new/removed pipelines ──────────────────
 

@@ -1,6 +1,7 @@
 import { register, type HandlerContext } from './registry.js';
 import { DEFAULT_TIMEOUT_SECONDS } from '../constants.js';
 import { parseDurationMs } from '../duration.js';
+import { loadGlobalConfig } from '../config/loader.js';
 
 register({
   name: 'webpage',
@@ -21,7 +22,10 @@ register({
       throw new Error('Playwright is not installed');
     }
 
-    const browser = await pw.chromium.launch({ headless: true });
+    const globalCfg = await loadGlobalConfig();
+    const browserType = globalCfg.playwright?.browser ?? 'chromium';
+    const headless = globalCfg.playwright?.headless ?? true;
+    const browser = await pw[browserType].launch({ headless });
 
     try {
       const page = await browser.newPage();

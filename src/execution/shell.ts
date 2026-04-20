@@ -93,17 +93,9 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
 
 export function parseJsonOutput(
   stdout: string,
-): Record<string, unknown> | null {
+): unknown {
   try {
-    const parsed: unknown = JSON.parse(stdout.trim());
-    if (
-      parsed !== null &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed)
-    ) {
-      return parsed as Record<string, unknown>;
-    }
-    return null;
+    return JSON.parse(stdout.trim());
   } catch {
     return null;
   }

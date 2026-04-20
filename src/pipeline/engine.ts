@@ -263,6 +263,8 @@ async function runPipelineOnce(
   // Engine-local changed map (not on ctx)
   const changedMap: Record<string, boolean> = {};
 
+  const engine = createEngine();
+
   const ctx: PipelineContext & Record<string, unknown> = {
     input: crashResumeInput,
     steps: { ...crashResumeSteps },
@@ -275,9 +277,8 @@ async function runPipelineOnce(
       interval: cfg.interval ?? null,
       run_number: runNumber,
     },
+    __engine: engine,
   };
-
-  const engine = createEngine();
   const softErrors: SoftError[] = [];
   const warnings: Array<{ step: string; message: string }> = [];
   let finalStatus: RunStatus = RUN_STATUS_OK;

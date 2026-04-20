@@ -39,7 +39,21 @@ import { readState, clearState } from './state/state.js';
 import { readHistory, clearHistory } from './state/history.js';
 import { startDaemon } from './daemon.js';
 import type { RunOptions } from './types/pipeline.js';
+import { parseDurationMs } from './duration.js';
 import type { PipelineState } from './types/state.js';
+
+// ── Duration shorthand resolver ──────────────────────────────────────
+
+const DURATION_SHORTHAND_RE = /^\d+(?:\.\d+)?(?:ms|s|m|h|d)$/;
+
+function resolveDateArg(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (DURATION_SHORTHAND_RE.test(value)) {
+    const ms = parseDurationMs(value);
+    return new Date(Date.now() - ms).toISOString();
+  }
+  return value;
+}
 
 // ── Arg parser ──────────────────────────────────────────────────────
 
@@ -55,14 +69,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   while (i < argv.length) {
     const arg = argv[i];
     if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
-        flags[key] = next;
-        i += 2;
-      } else {
-        flags[key] = true;
+      const eqIdx = arg.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = arg.slice(2, eqIdx);
+        flags[key] = arg.slice(eqIdx + 1);
         i += 1;
+      } else {
+        const key = arg.slice(2);
+        const next = argv[i + 1];
+        if (next !== undefined && !next.startsWith('--')) {
+          flags[key] = next;
+          i += 2;
+        } else {
+          flags[key] = true;
+          i += 1;
+        }
       }
     } else {
       positional.push(arg);
@@ -243,14 +264,31 @@ async function cmdStateShow(args: ParsedArgs): Promise<number> {
 
   const stepArg = flagStr(args, 'step');
   if (stepArg !== undefined) {
-    // Accept name or 0-based index
-    const keys = Object.keys(state.lastValues);
+    // Resolve numeric --step against the full pipeline step list
     const idx = parseInt(stepArg, 10);
-    const stepName =
-      !isNaN(idx) && idx >= 0 && idx < keys.length ? keys[idx] : stepArg;
+    let stepName: string;
+    if (!isNaN(idx) && idx >= 0 && String(idx) === stepArg) {
+      try {
+        const cfg = await loadPipelineConfig(name);
+        const allSteps = cfg.pipeline.map((s, i) =>
+          typeof s === 'string' ? `step-${i}` : (s.name || `step-${i}`),
+        );
+        if (idx >= allSteps.length) {
+          output.printHelp(`Step index ${idx} out of range (0..${allSteps.length - 1}).`);
+          return EXIT_SUCCESS;
+        }
+        stepName = allSteps[idx];
+      } catch {
+        // Fall back to lastValues keys if config can't be loaded
+        const keys = Object.keys(state.lastValues);
+        stepName = idx < keys.length ? keys[idx] : stepArg;
+      }
+    } else {
+      stepName = stepArg;
+    }
     const val = state.lastValues[stepName];
     if (val === undefined) {
-      output.printHelp(`No output for step "${stepName}".`);
+      output.printHelp(`No output for step "${stepName}" (step is untracked or has no stored output).`);
     } else {
       output.printHelp(JSON.stringify(val, null, 2));
     }
@@ -269,8 +307,8 @@ async function cmdStateHistory(args: ParsedArgs): Promise<number> {
   }
 
   const stepFilter = flagStr(args, 'step');
-  const since = flagStr(args, 'since');
-  const until = flagStr(args, 'until');
+  const since = resolveDateArg(flagStr(args, 'since'));
+  const until = resolveDateArg(flagStr(args, 'until'));
   const statusFilter = flagStr(args, 'status');
   const limit = flagStr(args, 'limit');
   const offset = flagStr(args, 'offset');
@@ -321,11 +359,32 @@ async function cmdStateDiff(args: ParsedArgs): Promise<number> {
   const current = entries[0].stepOutputs;
   const previous = entries[1].stepOutputs;
 
-  output.printHelp(chalk.bold('Current:'));
-  output.printHelp(JSON.stringify(current, null, 2));
-  output.sectionGap();
-  output.printHelp(chalk.bold('Previous run:'));
-  output.printHelp(JSON.stringify(previous, null, 2));
+  const allKeys = new Set([...Object.keys(previous), ...Object.keys(current)]);
+
+  let hasDiffs = false;
+  for (const key of allKeys) {
+    const prev = previous[key];
+    const curr = current[key];
+    const prevJson = JSON.stringify(prev);
+    const currJson = JSON.stringify(curr);
+
+    if (prev === undefined) {
+      output.printHelp(`${chalk.green('+ [added]')} ${chalk.bold(key)}: ${currJson}`);
+      hasDiffs = true;
+    } else if (curr === undefined) {
+      output.printHelp(`${chalk.red('- [removed]')} ${chalk.bold(key)}: ${prevJson}`);
+      hasDiffs = true;
+    } else if (prevJson !== currJson) {
+      output.printHelp(`${chalk.yellow('~ [changed]')} ${chalk.bold(key)}:`);
+      output.printHelp(`  ${chalk.red('- ' + prevJson)}`);
+      output.printHelp(`  ${chalk.green('+ ' + currJson)}`);
+      hasDiffs = true;
+    }
+  }
+
+  if (!hasDiffs) {
+    output.printHelp('No differences between the two most recent runs.');
+  }
   return EXIT_SUCCESS;
 }
 

@@ -1,3 +1,5 @@
+import fss from 'node:fs';
+import path from 'node:path';
 import type {
   PipelineConfig,
   GlobalConfig,
@@ -19,6 +21,7 @@ import {
 } from './loader.js';
 import { parseDurationMs } from '../duration.js';
 import { HANDLER_REQUIRED_INPUT } from './handlerInputSchema.js';
+import { pipelineConfigDir } from '../paths.js';
 
 // ── Result types ────────────────────────────────────────────────────
 
@@ -312,7 +315,7 @@ export function validatePipeline(
 
   // No interval set and no global default — warn
   if (cfg.interval === undefined) {
-    warn('NO_INTERVAL', 'No interval set; will use global defaultInterval', [
+    warn('NO_INTERVAL', 'No interval set — manual-run only pipeline', [
       'interval',
     ]);
   }
@@ -409,28 +412,80 @@ export function validatePipeline(
     if (typeof command !== 'string') continue;
 
     let hasRisk = false;
-    let pos = 0;
-    while ((pos = command.indexOf('${', pos)) !== -1) {
-      // Walk backwards skipping whitespace
-      let j = pos - 1;
-      while (j >= 0 && (command[j] === ' ' || command[j] === '\t')) j--;
-      if (j < 0 || command[j] !== "'") {
-        hasRisk = true;
-        break;
+
+    // Check for $(...) command substitution
+    if (/\$\(/.test(command)) {
+      hasRisk = true;
+    }
+
+    // Check for ${...} not inside single quotes
+    if (!hasRisk) {
+      let pos = 0;
+      while ((pos = command.indexOf('${', pos)) !== -1) {
+        // Walk backwards skipping whitespace
+        let j = pos - 1;
+        while (j >= 0 && (command[j] === ' ' || command[j] === '\t')) j--;
+        if (j < 0 || command[j] !== "'") {
+          hasRisk = true;
+          break;
+        }
+        pos += 2;
       }
-      pos += 2;
+    }
+
+    // Check for ${...} inside double-quoted strings
+    if (!hasRisk) {
+      const dqRe = /"[^"]*\$\{[^}]*\}[^"]*"/;
+      if (dqRe.test(command)) {
+        hasRisk = true;
+      }
     }
     if (hasRisk) {
       warn(
         'SHELL_INJECTION_RISK',
-        `step "${step.name}" shell command interpolates \${...} without single-quote wrapping; consider quoting to avoid shell-injection on user-influenced inputs`,
+        `step "${step.name}" shell command contains potentially unsafe interpolation (\${...} or $(...)); consider single-quoting to avoid shell-injection on user-influenced inputs`,
         ['pipeline', String(idx), 'input'],
       );
     }
   }
 
-  // TODO: 2e. ORPHAN_COLOCATED_SCRIPT — deferred to Phase 18 (spec §14.2)
-  // Requires CLI filesystem utilities that land in Phase 18.
+  // 2e. ORPHAN_COLOCATED_SCRIPT
+  try {
+    const cfgDir = pipelineConfigDir(name);
+    const dirEntries = fss.readdirSync(cfgDir);
+    const scriptFiles = dirEntries.filter(
+      (f) => f.endsWith('.js') || f.endsWith('.ts'),
+    );
+    if (scriptFiles.length > 0) {
+      // Collect all script references from step inputs
+      const referenced = new Set<string>();
+      for (const { step } of objectSteps) {
+        const collectRefs = (v: unknown): void => {
+          if (typeof v === 'string') {
+            for (const sf of scriptFiles) {
+              if (v.includes(sf)) referenced.add(sf);
+            }
+            return;
+          }
+          if (Array.isArray(v)) { for (const x of v) collectRefs(x); return; }
+          if (v !== null && typeof v === 'object') {
+            for (const x of Object.values(v as Record<string, unknown>)) collectRefs(x);
+          }
+        };
+        collectRefs(step.input);
+      }
+      for (const sf of scriptFiles) {
+        if (!referenced.has(sf)) {
+          warn(
+            'ORPHAN_COLOCATED_SCRIPT',
+            `"${sf}" exists in pipeline directory but is not referenced by any step`,
+          );
+        }
+      }
+    }
+  } catch {
+    // Config dir may not exist during validation-only runs
+  }
 
   // ── §14.1 hard errors (reference-level) ──────────────────────────
   // Only run if no structural errors — otherwise noise multiplies.

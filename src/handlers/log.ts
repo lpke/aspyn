@@ -21,6 +21,7 @@ register({
     };
 
     const format = opts.format ?? 'json';
+    const level = opts.level ?? 'info';
     const logPath = actionLogPath(ctx.meta.pipeline);
 
     // Ensure directory exists
@@ -37,7 +38,10 @@ register({
     if (format === 'text' && opts.message !== undefined) {
       line = opts.message + '\n';
     } else {
-      line = JSON.stringify(ctx.input) + '\n';
+      const payload = ctx.input !== null && typeof ctx.input === 'object' && !Array.isArray(ctx.input)
+        ? { ...(ctx.input as Record<string, unknown>), level }
+        : { data: ctx.input, level };
+      line = JSON.stringify(payload) + '\n';
     }
 
     fss.appendFileSync(logPath, line, 'utf-8');
