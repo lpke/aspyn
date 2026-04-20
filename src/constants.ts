@@ -9,6 +9,7 @@ export const RUN_LOCK_FILE = "run.lock.jsonl";
 export const CONCURRENCY_LOCK_FILE = "lock";
 export const RUN_LOG_FILE = "run.log";
 export const ACTION_LOG_FILE = "action.log";
+export const CONTEXT_FILE = "context.json";
 
 // ── Defaults ─────────────────────────────────────────────────────────
 export const DEFAULT_INTERVAL = "1h";

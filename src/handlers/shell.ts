@@ -14,8 +14,8 @@ register({
         : (input as { command: string; timeout?: string | number });
 
     const env: Record<string, string> = {};
-    const ctxFile = process.env[ENV_CONTEXT_FILE];
-    if (ctxFile) {
+    const ctxFile = (ctx as unknown as Record<string, unknown>).__contextFile;
+    if (typeof ctxFile === "string") {
       env[ENV_CONTEXT_FILE] = ctxFile;
     }
 

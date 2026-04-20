@@ -9,6 +9,7 @@ import {
   CONCURRENCY_LOCK_FILE,
   RUN_LOG_FILE,
   ACTION_LOG_FILE,
+  CONTEXT_FILE,
 } from "./constants.js";
 
 export function configRoot(): string {
@@ -63,4 +64,8 @@ export function runLogPath(name: string): string {
 
 export function actionLogPath(name: string): string {
   return path.join(logsDir(name), ACTION_LOG_FILE);
+}
+
+export function contextFilePath(name: string): string {
+  return path.join(stateDir(name), CONTEXT_FILE);
 }

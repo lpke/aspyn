@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import "../handlers/register-all.js";
 
 import { isDeepStrictEqual } from "node:util";
@@ -20,6 +22,7 @@ import { lookup } from "../handlers/registry.js";
 import { createEngine, type ExprEngine } from "../expr/engine.js";
 import { resolveRuntime } from "../template/resolve.js";
 import { parseDurationMs } from "../duration.js";
+import { contextFilePath } from "../paths.js";
 import { logger } from "../logger.js";
 import type {
   PipelineConfig,
@@ -287,6 +290,15 @@ async function runPipelineOnce(
 
       // Step timeout: stepDef.timeout → globalCfg.defaultTimeout (independent of pipeline timeout)
       const stepTimeoutMs = parseDurationMs(stepDef.timeout ?? globalCfg.defaultTimeout);
+
+      // Write context file for shell steps
+      if (stepDef.type === "shell") {
+        const ctxPath = contextFilePath(name);
+        fs.mkdirSync(path.dirname(ctxPath), { recursive: true });
+        fs.writeFileSync(ctxPath, JSON.stringify(ctx));
+        ctx.__contextFile = ctxPath;
+        appendEvent(name, { type: "context_file", runId, path: ctxPath });
+      }
 
       // Step-level retry (independent of pipeline-level retry)
       const effectiveRetry = stepDef.retry;
