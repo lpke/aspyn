@@ -165,7 +165,6 @@ async function cmdRun(args: ParsedArgs): Promise<number> {
 
 async function cmdDaemon(args: ParsedArgs): Promise<number> {
   const verbose = flagBool(args, "verbose");
-  logger.info("TODO: daemon is a Phase 19 stub");
   await startDaemon({ verbose });
   return EXIT_SUCCESS;
 }
