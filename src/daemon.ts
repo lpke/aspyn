@@ -93,7 +93,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
   // ── Schedule a single pipeline ──────────────────────────────────
 
   async function schedulePipeline(name: string): Promise<void> {
-    let cfg: PipelineConfig;
+    let cfg: PipelineConfig;  // let: reassigned when interval changes
     try {
       cfg = await loadPipelineConfig(name);
     } catch (err) {
@@ -133,7 +133,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
 
     const entry: ScheduledPipeline = { task: null!, running: null, lastRunAt: seedLastRunAt };
 
-    const task = cron.schedule(cronExpr, async () => {
+    const tickCallback = async () => {
       if (shuttingDown) return;
       if (entry.running) {
         logger.debug(`[${name}] Previous run still in progress, skipping tick`);
@@ -155,10 +155,20 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
             return;
           }
 
-          // // TODO: If interval changed, we should re-schedule the cron task.
-          // For now, just log it.
           if (tickCfg.interval !== cfg.interval) {
-            logger.info(`[${name}] interval changed: "${cfg.interval}" → "${tickCfg.interval}"`);
+            logger.info(`[${name}] interval changed: "${cfg.interval}" \u2192 "${tickCfg.interval}"`);
+            const newCron = intervalToCron(tickCfg.interval!);
+            if (!newCron) {
+              logger.warn(`[${name}] Could not convert new interval "${tickCfg.interval}" to cron; keeping existing schedule`);
+            } else {
+              entry.task.stop();
+              cfg = tickCfg;
+              const newTask = cron.schedule(newCron, tickCallback);
+              entry.task = newTask;
+              scheduled.set(name, entry);
+              logger.info(`[${name}] Re-scheduled with cron "${newCron}"`);
+              return; // let the new schedule drive the next tick
+            }
           }
 
           const intervalMs = parseDurationMs(tickCfg.interval);
@@ -168,19 +178,24 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
             const elapsed = now - entry.lastRunAt;
             timesToRun = Math.max(1, Math.floor(elapsed / intervalMs));
           }
+          // Stamp lastRunAt before running so elapsed-time catch-up
+          // reflects schedule intent (time since last scheduled start),
+          // not completion time \u2014 avoids inflated run_all catch-up counts.
+          entry.lastRunAt = Date.now();
           for (let r = 0; r < timesToRun; r++) {
             if (shuttingDown) break;
             logger.info(`[${name}] Running pipeline${timesToRun > 1 ? ` (${r + 1}/${timesToRun})` : ''}`);
             await runPipeline(name);
           }
-          entry.lastRunAt = Date.now();
         } catch (err) {
           logger.error(`[${name}] Pipeline error: ${(err as Error).message}`);
         } finally {
           entry.running = null;
         }
       })();
-    });
+    };
+
+    const task = cron.schedule(cronExpr, tickCallback);
 
     entry.task = task;
     scheduled.set(name, entry);

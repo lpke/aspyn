@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import fss from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -13,8 +12,8 @@ import { runLockPath } from '../paths.js';
 
 export function appendEvent(pipelineName: string, event: JournalEvent): void {
   const p = runLockPath(pipelineName);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.appendFileSync(p, JSON.stringify(event) + '\n');
+  fss.mkdirSync(path.dirname(p), { recursive: true });
+  fss.appendFileSync(p, JSON.stringify(event) + '\n');
 }
 
 // ── Read ────────────────────────────────────────────────────────────

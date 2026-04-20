@@ -46,7 +46,6 @@ import type {
 import { isHandlerHalt } from '../types/pipeline.js';
 import type { PipelineState, StateHistoryEntry } from '../types/state.js';
 import {
-  DEFAULT_TIMEOUT_SECONDS,
   RUN_STATUS_OK,
   RUN_STATUS_ERROR,
   RUN_STATUS_HALTED,
