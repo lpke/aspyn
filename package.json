@@ -23,11 +23,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "postbuild": "chmod +x dist/cli.js",
     "dev": "tsx src/cli.ts",
     "prepublishOnly": "pnpm build"
   },
   "bin": {
-    "aspyn": "./dist/bin-stub.js"
+    "aspyn": "./dist/cli.js"
   },
   "devDependencies": {
     "@types/jexl": "^2.3.4",
