@@ -1,5 +1,7 @@
 // ── Duration parsing ────────────────────────────────────────────────
 
+import cron from 'node-cron';
+
 const DURATION_RE = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/;
 
 const UNIT_MS: Record<string, number> = {
@@ -27,3 +29,19 @@ export function parseDurationMs(input: string | number): number {
   }
   return parseFloat(m[1]) * UNIT_MS[m[2]];
 }
+
+/**
+ * Convert duration input to ms. Number = seconds (convention used across all config).
+ */
+export function toMs(input: string | number): number {
+  if (typeof input === 'number') return input * 1_000;
+  return parseDurationMs(input);
+}
+
+/**
+ * Valid interval = duration shorthand OR cron expression.
+ */
+export function isValidInterval(input: string): boolean {
+  return DURATION_RE.test(input) || cron.validate(input);
+}
+

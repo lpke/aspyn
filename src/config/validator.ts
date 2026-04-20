@@ -15,7 +15,7 @@ import {
   loadPipelineConfig,
   listPipelineNames,
 } from './loader.js';
-import { parseDurationMs } from '../duration.js';
+import { parseDurationMs, isValidInterval } from '../duration.js';
 import { HANDLER_REQUIRED_INPUT } from './handlerInputSchema.js';
 import { pipelineConfigDir } from '../paths.js';
 
@@ -232,7 +232,7 @@ export function validatePipeline(
 
   // interval
   if (cfg.interval !== undefined) {
-    if (typeof cfg.interval !== 'string' || !DURATION_RE.test(cfg.interval)) {
+    if (typeof cfg.interval !== 'string' || !isValidInterval(cfg.interval)) {
       err(
         'INVALID_INTERVAL',
         `"interval" must be a duration string (e.g. "30s", "5m")`,
