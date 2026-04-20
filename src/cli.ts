@@ -175,7 +175,7 @@ async function cmdRun(args: ParsedArgs): Promise<number> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // --from referencing a non-existent step is a usage error
-      if (msg.includes('--from') && msg.includes('unknown step')) {
+      if (msg.startsWith('--from:') || (msg.includes('--from') && msg.includes('unknown step'))) {
         output.printHelp(msg);
         return EXIT_USAGE;
       }

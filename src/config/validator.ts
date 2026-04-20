@@ -1,8 +1,6 @@
 import fss from 'node:fs';
-import path from 'node:path';
 import type {
   PipelineConfig,
-  GlobalConfig,
   StepObject,
   Step,
   RetrySpec,
@@ -11,11 +9,9 @@ import type {
 import {
   HANDLER_TYPES,
   LOG_LEVELS,
-  MISSED_RUN_POLICIES,
   DEFAULT_TIMEOUT_SECONDS,
 } from '../constants.js';
 import {
-  loadGlobalConfig,
   loadPipelineConfig,
   listPipelineNames,
 } from './loader.js';
@@ -55,7 +51,6 @@ const RESERVED_ROOTS = new Set(['input', 'firstRun', 'meta', 'anyChanged']);
 
 export function validatePipeline(
   cfg: PipelineConfig,
-  globalCfg: GlobalConfig,
 ): ValidationResult {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -313,21 +308,12 @@ export function validatePipeline(
 
   // ── Lint warnings ─────────────────────────────────────────────────
 
-  // No interval set — only warn when interval is absent by omission
-  // (not when explicitly set to null, false, or "manual")
-  if (
-    cfg.interval === undefined &&
-    (cfg as unknown as Record<string, unknown>).interval === undefined
-  ) {
-    // interval key is truly absent from the config object — could be accidental
-    // Suppress: if the raw config was loaded and interval is simply missing,
-    // this is a manual-run pipeline. Only emit under --verbose (caller filters).
-  }
-
   // Pipeline has only side-effect-free steps — warn
   const allStepsArePure =
     objectSteps.length > 0 &&
-    objectSteps.every(({ step }) => step.sideEffect === false);
+    objectSteps.every(
+      ({ step }) => step.sideEffect === false && step.track !== true,
+    );
   if (allStepsArePure) {
     warn(
       'ALL_PURE_STEPS',
@@ -780,14 +766,13 @@ function validateOnErrorHook(
 // ── Validate all pipelines ──────────────────────────────────────────
 
 export async function validateAll(): Promise<ValidationResult[]> {
-  const globalCfg = await loadGlobalConfig();
   const names = await listPipelineNames();
   const results: ValidationResult[] = [];
 
   for (const name of names) {
     try {
       const cfg = await loadPipelineConfig(name);
-      const r = validatePipeline(cfg, globalCfg);
+      const r = validatePipeline(cfg);
       r.pipeline = name;
       results.push(r);
     } catch (e: unknown) {
