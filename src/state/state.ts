@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import fss from 'node:fs';
 
 import type { PipelineState } from '../types/state.js';
 import { stateDir, stateJsonPath } from '../paths.js';

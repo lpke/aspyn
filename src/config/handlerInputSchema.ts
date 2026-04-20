@@ -1,4 +1,4 @@
-export interface HandlerInputSchema {
+interface HandlerInputSchema {
   fields: string[];
   stringShorthand: boolean;
 }

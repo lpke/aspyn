@@ -270,7 +270,7 @@ async function cmdStateShow(args: ParsedArgs): Promise<number> {
         );
         if (idx >= allSteps.length) {
           output.printHelp(`Step index ${idx} out of range (0..${allSteps.length - 1}).`);
-          return EXIT_SUCCESS;
+          return EXIT_USAGE;
         }
         stepName = allSteps[idx];
       } catch {
@@ -307,6 +307,23 @@ async function cmdStateHistory(args: ParsedArgs): Promise<number> {
   const statusFilter = flagStr(args, 'status');
   const limit = flagStr(args, 'limit');
   const offset = flagStr(args, 'offset');
+
+  // Validate --limit and --offset are non-negative integers
+  if (limit !== undefined) {
+    const n = parseInt(limit, 10);
+    if (isNaN(n) || n < 0 || String(n) !== limit) {
+      output.printHelp('--limit must be a non-negative integer');
+      return EXIT_USAGE;
+    }
+  }
+  if (offset !== undefined) {
+    const n = parseInt(offset, 10);
+    if (isNaN(n) || n < 0 || String(n) !== offset) {
+      output.printHelp('--offset must be a non-negative integer');
+      return EXIT_USAGE;
+    }
+  }
+
   const format = (flagStr(args, 'format') ?? 'table') as
     | 'table'
     | 'json'

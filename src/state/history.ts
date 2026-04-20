@@ -8,7 +8,6 @@ import { rotateIfNeededSync } from '../logger.js';
 import {
   DEFAULT_ROTATION_MAX_FILE_SIZE,
   DEFAULT_ROTATION_MAX_FILES,
-  STATE_HISTORY_FILE,
 } from '../constants.js';
 
 // ── Append (synchronous) ────────────────────────────────────────────

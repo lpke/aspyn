@@ -119,7 +119,19 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
     // Run crash recovery before first schedule
     await daemonCrashRecovery(name, globalCfg.missedRunPolicy);
 
-    const entry: ScheduledPipeline = { task: null!, running: null, lastRunAt: Date.now() };
+    // Seed lastRunAt from persisted state so missed-run catch-up works after downtime
+    let seedLastRunAt = Date.now();
+    try {
+      const persistedState = await readState(name);
+      if (persistedState?.lastRun) {
+        const parsed = Date.parse(persistedState.lastRun);
+        if (!isNaN(parsed)) seedLastRunAt = parsed;
+      }
+    } catch {
+      // Fall back to Date.now() for fresh pipelines
+    }
+
+    const entry: ScheduledPipeline = { task: null!, running: null, lastRunAt: seedLastRunAt };
 
     const task = cron.schedule(cronExpr, async () => {
       if (shuttingDown) return;
@@ -129,7 +141,27 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
       }
       entry.running = (async () => {
         try {
-          const intervalMs = parseDurationMs(cfg.interval!);
+          // Reload config each tick so on-disk edits are observed
+          let tickCfg: PipelineConfig;
+          try {
+            tickCfg = await loadPipelineConfig(name);
+          } catch (loadErr) {
+            logger.warn(`[${name}] Failed to reload config, skipping tick: ${(loadErr as Error).message}`);
+            return;
+          }
+
+          if (!tickCfg.interval) {
+            logger.warn(`[${name}] interval removed from config, skipping tick`);
+            return;
+          }
+
+          // // TODO: If interval changed, we should re-schedule the cron task.
+          // For now, just log it.
+          if (tickCfg.interval !== cfg.interval) {
+            logger.info(`[${name}] interval changed: "${cfg.interval}" → "${tickCfg.interval}"`);
+          }
+
+          const intervalMs = parseDurationMs(tickCfg.interval);
           const now = Date.now();
           let timesToRun = 1;
           if (globalCfg.missedRunPolicy === 'run_all' && entry.lastRunAt > 0) {
