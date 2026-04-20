@@ -29,6 +29,7 @@ const VALID_BACKOFF = new Set(["fixed", "linear", "exponential"]);
 const DURATION_RE = /^\d+(?:\.\d+)?(?:ms|s|m|h|d)$/;
 const TEMPLATE_RE = /\$\{([^}]*)\}/g;
 const IDENT_CHAIN_RE = /\b(steps|prev|changed)\.([A-Za-z_][\w-]*)/g;
+const DOTTED_NUMERIC_RE = /\b(steps|prev|changed)\.([0-9]\w*)/g;
 const RESERVED_ROOTS = new Set(["input", "firstRun", "meta", "anyChanged"]);
 
 // ── Validation implementation ───────────────────────────────────────
@@ -67,21 +68,25 @@ export function validatePipeline(
   for (let i = 0; i < cfg.pipeline.length; i++) {
     const step = cfg.pipeline[i];
     if (typeof step === "string") {
-      // shorthand step — no further validation needed beyond handler type
-      // shorthand strings don't have a "type" to validate here (they're resolved at runtime)
+      // Auto-name bare-string steps as step-<index>
+      const autoName = `step-${i}`;
+      stepNames.add(autoName);
+      objectSteps.push({ step: { name: autoName, type: "shell", input: step } as StepObject, index: i });
       continue;
     }
     if (!isObject(step)) {
       err("INVALID_STEP", `Step at index ${i} must be a string or object`, ["pipeline", String(i)]);
       continue;
     }
-    const s = step as StepObject;
+    let s = step as StepObject;
     objectSteps.push({ step: s, index: i });
 
-    // name — required
+    // name — auto-assign if missing
     if (typeof s.name !== "string" || s.name.length === 0) {
-      err("MISSING_STEP_NAME", `Step at index ${i} must have a non-empty "name"`, ["pipeline", String(i), "name"]);
-    } else {
+      s = { ...s, name: `step-${i}` } as StepObject;
+      objectSteps[objectSteps.length - 1] = { step: s, index: i };
+    }
+    {
       if (stepNames.has(s.name)) {
         err("DUPLICATE_STEP_NAME", `Duplicate step name "${s.name}"`, ["pipeline", String(i), "name"]);
       }
@@ -358,6 +363,22 @@ export function validatePipeline(
       for (const target of scanTargets) {
         forEachString(target, (s) => {
           let tm: RegExpExecArray | null;
+
+          // Reject dotted-numeric references like ${steps.0}
+          TEMPLATE_RE.lastIndex = 0;
+          while ((tm = TEMPLATE_RE.exec(s))) {
+            const body = tm[1];
+            let dnm: RegExpExecArray | null;
+            DOTTED_NUMERIC_RE.lastIndex = 0;
+            while ((dnm = DOTTED_NUMERIC_RE.exec(body))) {
+              err(
+                "DOTTED_NUMERIC_REFERENCE",
+                `step "${step.name}" uses ${dnm[1]}.${dnm[2]} (dotted numeric); use bracket notation ${dnm[1]}[${dnm[2]}] or the auto-assigned name "step-${dnm[2]}" instead`,
+                ["pipeline", String(i)],
+              );
+            }
+          }
+
           TEMPLATE_RE.lastIndex = 0;
           while ((tm = TEMPLATE_RE.exec(s))) {
             const body = tm[1];

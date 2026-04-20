@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import readline from "node:readline";
 import path from "node:path";
 import "../handlers/register-all.js";
 
@@ -75,6 +76,9 @@ function nowIso(): string {
 function normaliseStep(step: Step, index: number, fallbackName?: string): StepObject {
   if (typeof step === "string") {
     return { name: fallbackName ?? `step-${index}`, type: "shell", input: step };
+  }
+  if (!step.name) {
+    return { ...step, name: fallbackName ?? `step-${index}` };
   }
   return step;
 }
@@ -160,6 +164,20 @@ function pipelineTimeoutError(stepName: string | null, ms: number) {
   return { message: `Pipeline timed out after ${ms}ms`, step: stepName, kind: "pipeline_timeout" as const };
 }
 
+// ── Crash recovery prompt ───────────────────────────────────────────
+
+function promptCrashRecovery(): Promise<"continue" | "reset"> {
+  if (!process.stdin.isTTY) return Promise.resolve("reset");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => {
+    rl.question("Prior run crashed. [c]ontinue or [r]eset? [r] ", (answer) => {
+      rl.close();
+      const a = answer.trim().toLowerCase();
+      resolve(a === "c" || a === "continue" ? "continue" : "reset");
+    });
+  });
+}
+
 // ── Core execution ──────────────────────────────────────────────────
 
 async function executeStep(
@@ -191,6 +209,34 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
 
   const fromIdx = resolveStepIndex(allSteps, opts.from, "from") ?? 0;
   const untilIdx = resolveStepIndex(allSteps, opts.until, "until") ?? allSteps.length - 1;
+
+  // --from predecessor validation: ensure tracked predecessors are hydrated
+  if (opts.from !== undefined && fromIdx > 0 && !opts.replaySideEffects) {
+    for (let i = 0; i < fromIdx; i++) {
+      const step = allSteps[i];
+      const handler = lookup(step.type);
+      const tracked = isTracked(step, handler, i, allSteps.length);
+      if (tracked && !(step.name in crashResumeSteps)) {
+        throw new Error(
+          `--from: predecessor step "${step.name}" (index ${i}) has no recorded output in the journal. ` +
+          `Ensure it has track: true and a prior run completed it.`,
+        );
+      }
+    }
+  }
+
+  // --from: warn about skipped side-effect steps; --replay-side-effects overrides
+  const effectiveFromIdx = (opts.from !== undefined && opts.replaySideEffects) ? 0 : fromIdx;
+  if (opts.from !== undefined && !opts.replaySideEffects && fromIdx > 0) {
+    for (let i = 0; i < fromIdx; i++) {
+      const step = allSteps[i];
+      const handler = lookup(step.type);
+      const se = step.sideEffect ?? handler?.sideEffectDefault ?? false;
+      if (se) {
+        logger.warn(`--from: skipping side-effect step "${step.name}" (index ${i}); use --replay-side-effects to force`);
+      }
+    }
+  }
 
   // Engine-local changed map (not on ctx)
   const changedMap: Record<string, boolean> = {};
@@ -230,7 +276,7 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
     // Track the last step that executed for timeout attribution
     let lastExecutedStep: string | null = null;
 
-    for (let i = fromIdx; i <= untilIdx; i++) {
+    for (let i = effectiveFromIdx; i <= untilIdx; i++) {
       if (pipelineTimedOut) {
         finalStatus = RUN_STATUS_ERROR;
         runError = pipelineTimeoutError(lastExecutedStep, pipelineTimeoutMs);
@@ -278,6 +324,8 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
         appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
         appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_SKIPPED, endedAt: nowIso() });
         logger.info(`[dry] Skipping side-effect step "${stepDef.name}"`);
+        ctx.steps[stepDef.name] = null;
+        ctx.input = null;
         continue;
       }
 
@@ -464,14 +512,25 @@ export async function runPipeline(
   // Generate runId after lock acquisition (§17)
   const runId = generateRunId();
 
+  // Validate conflicting flags
+  if (opts.from !== undefined && opts.continueFromCrash) {
+    await releaseLock(lock);
+    throw new Error("--from and --continue are conflicting options");
+  }
+
   // 3. Check crashed run
   const crashed = await hasCrashedRun(name);
   if (crashed) {
     if (opts.resetCrash) {
       await clearJournal(name);
     } else if (!opts.continueFromCrash) {
-      await releaseLock(lock);
-      return { status: RUN_STATUS_INTERRUPTED, runId: "" };
+      // TTY prompt
+      const choice = await promptCrashRecovery();
+      if (choice === "continue") {
+        opts = { ...opts, continueFromCrash: true };
+      } else {
+        await clearJournal(name);
+      }
     }
   }
 
@@ -485,6 +544,16 @@ export async function runPipeline(
     crashResumeAfter = lastCompletedStep(events);
     crashResumeInput = lastStepOutputFromJournal(events);
     await clearJournal(name);
+  }
+
+  // --from hydration: read journal to seed steps and input
+  if (opts.from !== undefined && !crashed) {
+    const events = await readJournal(name);
+    if (events.length > 0) {
+      const hydrated = hydrateStepsFromJournal(events);
+      crashResumeSteps = hydrated;
+      crashResumeInput = lastStepOutputFromJournal(events);
+    }
   }
 
   // 4. Load state
