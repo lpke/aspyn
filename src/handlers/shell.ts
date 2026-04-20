@@ -1,28 +1,29 @@
-import { register, type HandlerContext } from "./registry.js";
-import { execShell, parseJsonOutput } from "../execution/shell.js";
-import { ENV_CONTEXT_FILE } from "../constants.js";
-import { parseDurationMs } from "../duration.js";
-import { pipelineConfigDir } from "../paths.js";
+import { register, type HandlerContext } from './registry.js';
+import { execShell, parseJsonOutput } from '../execution/shell.js';
+import { ENV_CONTEXT_FILE } from '../constants.js';
+import { parseDurationMs } from '../duration.js';
+import { pipelineConfigDir } from '../paths.js';
 
 register({
-  name: "shell",
+  name: 'shell',
   sideEffectDefault: true,
 
   async run(ctx: HandlerContext, input: unknown): Promise<unknown> {
     const opts =
-      typeof input === "string"
+      typeof input === 'string'
         ? { command: input }
         : (input as { command: string; timeout?: string | number });
 
     const env: Record<string, string> = {};
     const ctxFile = (ctx as unknown as Record<string, unknown>).__contextFile;
-    if (typeof ctxFile === "string") {
+    if (typeof ctxFile === 'string') {
       env[ENV_CONTEXT_FILE] = ctxFile;
     }
 
-    const timeoutSecs = opts.timeout !== undefined
-      ? parseDurationMs(opts.timeout) / 1000
-      : undefined;
+    const timeoutSecs =
+      opts.timeout !== undefined
+        ? parseDurationMs(opts.timeout) / 1000
+        : undefined;
 
     const result = await execShell({
       command: opts.command,
@@ -33,7 +34,9 @@ register({
     });
 
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || `shell exited with code ${result.exitCode}`);
+      throw new Error(
+        result.stderr || `shell exited with code ${result.exitCode}`,
+      );
     }
 
     return parseJsonOutput(result.stdout) ?? result.stdout.trim();

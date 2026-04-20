@@ -16,12 +16,14 @@ const UNIT_MS: Record<string, number> = {
  * - String input must match `<value><unit>` where unit ∈ {ms, s, m, h, d}.
  */
 export function parseDurationMs(input: string | number): number {
-  if (typeof input === "number") {
+  if (typeof input === 'number') {
     return input * 1_000;
   }
   const m = DURATION_RE.exec(input);
   if (!m) {
-    throw new Error(`Invalid duration string: "${input}". Expected format: <number><ms|s|m|h|d>`);
+    throw new Error(
+      `Invalid duration string: "${input}". Expected format: <number><ms|s|m|h|d>`,
+    );
   }
   return parseFloat(m[1]) * UNIT_MS[m[2]];
 }

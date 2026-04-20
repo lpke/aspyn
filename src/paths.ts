@@ -1,5 +1,5 @@
-import os from "node:os";
-import path from "node:path";
+import os from 'node:os';
+import path from 'node:path';
 import {
   APP_NAME,
   CONFIG_FILE,
@@ -10,16 +10,20 @@ import {
   RUN_LOG_FILE,
   ACTION_LOG_FILE,
   CONTEXT_FILE,
-} from "./constants.js";
+} from './constants.js';
 
 export function configRoot(): string {
   const xdg = process.env.XDG_CONFIG_HOME;
-  return xdg ? path.join(xdg, APP_NAME) : path.join(os.homedir(), ".config", APP_NAME);
+  return xdg
+    ? path.join(xdg, APP_NAME)
+    : path.join(os.homedir(), '.config', APP_NAME);
 }
 
 export function dataRoot(): string {
   const xdg = process.env.XDG_DATA_HOME;
-  return xdg ? path.join(xdg, APP_NAME) : path.join(os.homedir(), ".local", "share", APP_NAME);
+  return xdg
+    ? path.join(xdg, APP_NAME)
+    : path.join(os.homedir(), '.local', 'share', APP_NAME);
 }
 
 export function globalConfigPath(): string {
@@ -35,11 +39,11 @@ export function pipelineConfigPath(name: string): string {
 }
 
 export function stateDir(name: string): string {
-  return path.join(dataRoot(), "state", name);
+  return path.join(dataRoot(), 'state', name);
 }
 
 export function logsDir(name: string): string {
-  return path.join(dataRoot(), "logs", name);
+  return path.join(dataRoot(), 'logs', name);
 }
 
 export function stateJsonPath(name: string): string {

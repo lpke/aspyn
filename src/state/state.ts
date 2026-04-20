@@ -1,22 +1,22 @@
-import fs from "node:fs/promises";
-import fss from "node:fs";
+import fs from 'node:fs/promises';
+import fss from 'node:fs';
 
-import type { PipelineState } from "../types/state.js";
-import { stateDir, stateJsonPath } from "../paths.js";
+import type { PipelineState } from '../types/state.js';
+import { stateDir, stateJsonPath } from '../paths.js';
 
 export async function readState(
   pipelineName: string,
 ): Promise<PipelineState | null> {
   const filePath = stateJsonPath(pipelineName);
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
+    const raw = await fs.readFile(filePath, 'utf-8');
     try {
       return JSON.parse(raw) as PipelineState;
     } catch {
       return null;
     }
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
 }
@@ -29,8 +29,8 @@ export async function writeState(
   await fs.mkdir(dir, { recursive: true });
 
   const filePath = stateJsonPath(pipelineName);
-  const tmpPath = filePath + ".tmp";
-  await fs.writeFile(tmpPath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+  const tmpPath = filePath + '.tmp';
+  await fs.writeFile(tmpPath, JSON.stringify(state, null, 2) + '\n', 'utf-8');
   await fs.rename(tmpPath, filePath);
 }
 
@@ -43,7 +43,7 @@ export async function clearState(
     try {
       await fs.unlink(filePath);
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
     return;
   }

@@ -1,7 +1,12 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { parse, type ParseError } from "jsonc-parser";
-import type { GlobalConfig, PipelineConfig, StepObject, Step } from "../types/config.js";
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { parse, type ParseError } from 'jsonc-parser';
+import type {
+  GlobalConfig,
+  PipelineConfig,
+  StepObject,
+  Step,
+} from '../types/config.js';
 import {
   DEFAULT_INTERVAL,
   DEFAULT_TIMEOUT_SECONDS,
@@ -10,13 +15,9 @@ import {
   LOG_LEVELS,
   MISSED_RUN_POLICIES,
   CONFIG_FILE,
-} from "../constants.js";
-import {
-  configRoot,
-  globalConfigPath,
-  pipelineConfigPath,
-} from "../paths.js";
-import { resolveEnv } from "../template/resolve.js";
+} from '../constants.js';
+import { configRoot, globalConfigPath, pipelineConfigPath } from '../paths.js';
+import { resolveEnv } from '../template/resolve.js';
 
 // ── JSONC parsing ───────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ function parseJsonc(text: string, filePath: string): unknown {
   const result = parse(text, errors, { allowTrailingComma: true });
   if (errors.length > 0) {
     throw new Error(
-      `Failed to parse JSONC at ${filePath}: ${errors.map((e) => `offset ${e.offset}: ${e.error}`).join(", ")}`,
+      `Failed to parse JSONC at ${filePath}: ${errors.map((e) => `offset ${e.offset}: ${e.error}`).join(', ')}`,
     );
   }
   return result;
@@ -34,7 +35,7 @@ function parseJsonc(text: string, filePath: string): unknown {
 // ── Hook normalisation ──────────────────────────────────────────────
 
 function isStepObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /**
@@ -44,10 +45,10 @@ function isStepObject(v: unknown): v is Record<string, unknown> {
  */
 function normaliseHooks(cfg: PipelineConfig): void {
   function stripHook(hook: Step): StepObject {
-    if (typeof hook === "string") {
+    if (typeof hook === 'string') {
       return {
-        name: "onError",
-        type: "shell",
+        name: 'onError',
+        type: 'shell',
         input: { command: hook },
         sideEffect: true,
       } satisfies StepObject;
@@ -63,7 +64,7 @@ function normaliseHooks(cfg: PipelineConfig): void {
   }
 
   for (const step of cfg.pipeline) {
-    if (typeof step !== "string" && step.onError !== undefined) {
+    if (typeof step !== 'string' && step.onError !== undefined) {
       step.onError = stripHook(step.onError);
     }
   }
@@ -71,11 +72,13 @@ function normaliseHooks(cfg: PipelineConfig): void {
 
 // ── Public API ──────────────────────────────────────────────────────
 
-export async function loadPipelineConfig(name: string): Promise<PipelineConfig> {
+export async function loadPipelineConfig(
+  name: string,
+): Promise<PipelineConfig> {
   const filePath = pipelineConfigPath(name);
   let text: string;
   try {
-    text = await fs.readFile(filePath, "utf-8");
+    text = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     throw new Error(
       `[${name}] Could not read config at ${filePath}: ${(err as Error).message}`,
@@ -91,10 +94,10 @@ export async function loadGlobalConfig(): Promise<GlobalConfig> {
   const filePath = globalConfigPath();
   let raw: Record<string, unknown>;
   try {
-    const text = await fs.readFile(filePath, "utf-8");
+    const text = await fs.readFile(filePath, 'utf-8');
     raw = parseJsonc(text, filePath) as Record<string, unknown>;
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       raw = {};
     } else {
       throw err;
@@ -104,41 +107,57 @@ export async function loadGlobalConfig(): Promise<GlobalConfig> {
   const resolved = resolveEnv(raw) as Record<string, unknown>;
 
   return {
-    defaultInterval: typeof resolved.defaultInterval === "string" ? resolved.defaultInterval : DEFAULT_INTERVAL,
-    defaultTimeout: typeof resolved.defaultTimeout === "number" ? resolved.defaultTimeout : DEFAULT_TIMEOUT_SECONDS,
-    minInterval: typeof resolved.minInterval === "string" ? resolved.minInterval : MIN_INTERVAL,
-    shutdownTimeout: typeof resolved.shutdownTimeout === "number" ? resolved.shutdownTimeout : SHUTDOWN_TIMEOUT_MS,
+    defaultInterval:
+      typeof resolved.defaultInterval === 'string'
+        ? resolved.defaultInterval
+        : DEFAULT_INTERVAL,
+    defaultTimeout:
+      typeof resolved.defaultTimeout === 'number'
+        ? resolved.defaultTimeout
+        : DEFAULT_TIMEOUT_SECONDS,
+    minInterval:
+      typeof resolved.minInterval === 'string'
+        ? resolved.minInterval
+        : MIN_INTERVAL,
+    shutdownTimeout:
+      typeof resolved.shutdownTimeout === 'number'
+        ? resolved.shutdownTimeout
+        : SHUTDOWN_TIMEOUT_MS,
     missedRunPolicy:
-      typeof resolved.missedRunPolicy === "string" &&
-      (MISSED_RUN_POLICIES as readonly string[]).includes(resolved.missedRunPolicy)
-        ? (resolved.missedRunPolicy as GlobalConfig["missedRunPolicy"])
-        : "run_once",
+      typeof resolved.missedRunPolicy === 'string' &&
+      (MISSED_RUN_POLICIES as readonly string[]).includes(
+        resolved.missedRunPolicy,
+      )
+        ? (resolved.missedRunPolicy as GlobalConfig['missedRunPolicy'])
+        : 'run_once',
     log:
-      typeof resolved.log === "string" &&
+      typeof resolved.log === 'string' &&
       (LOG_LEVELS as readonly string[]).includes(resolved.log)
-        ? (resolved.log as GlobalConfig["log"])
-        : "info",
-    playwright: isStepObject(resolved.playwright) ? resolved.playwright as GlobalConfig["playwright"] : undefined,
+        ? (resolved.log as GlobalConfig['log'])
+        : 'info',
+    playwright: isStepObject(resolved.playwright)
+      ? (resolved.playwright as GlobalConfig['playwright'])
+      : undefined,
     stateHistory: isStepObject(resolved.stateHistory)
-      ? resolved.stateHistory as GlobalConfig["stateHistory"]
+      ? (resolved.stateHistory as GlobalConfig['stateHistory'])
       : { enabled: true },
   };
 }
 
 export async function listPipelineNames(): Promise<string[]> {
   const root = configRoot();
-  let entries: import("node:fs").Dirent[];
+  let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
 
   const names: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith('.')) continue;
     const candidate = path.join(root, entry.name, CONFIG_FILE);
     try {
       await fs.access(candidate);

@@ -1,17 +1,17 @@
 // Keeping jsonpath-plus (already in package.json). It covers most JSONPath
 // needs and avoids adding a new dependency.
-import { JSONPath } from "jsonpath-plus";
-import { register, type HandlerContext } from "./registry.js";
+import { JSONPath } from 'jsonpath-plus';
+import { register, type HandlerContext } from './registry.js';
 
 register({
-  name: "jsonpath",
+  name: 'jsonpath',
   async run(ctx: HandlerContext, input: unknown) {
     const { queries } = input as { queries: Record<string, string> };
 
     const data = ctx.input;
 
     if (data === undefined || data === null) {
-      throw new Error("jsonpath: ctx.input is empty; nothing to query");
+      throw new Error('jsonpath: ctx.input is empty; nothing to query');
     }
 
     const result: Record<string, unknown> = {};

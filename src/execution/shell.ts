@@ -1,5 +1,9 @@
-import { spawn } from "node:child_process";
-import { DEFAULT_TIMEOUT_SECONDS, SHELL_SIGKILL_GRACE_MS, SHELL_TIMEOUT_EXIT_CODE } from "../constants.js";
+import { spawn } from 'node:child_process';
+import {
+  DEFAULT_TIMEOUT_SECONDS,
+  SHELL_SIGKILL_GRACE_MS,
+  SHELL_TIMEOUT_EXIT_CODE,
+} from '../constants.js';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -29,23 +33,23 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
   } = options;
 
   return new Promise((resolve) => {
-    const child = spawn("/bin/sh", ["-c", command], {
+    const child = spawn('/bin/sh', ['-c', command], {
       cwd,
       env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
     let killed = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 
@@ -61,18 +65,18 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
     // Timeout handling: SIGTERM → wait 2 s → SIGKILL.
     timeoutTimer = setTimeout(() => {
       killed = true;
-      child.kill("SIGTERM");
+      child.kill('SIGTERM');
 
       killTimer = setTimeout(() => {
         try {
-          child.kill("SIGKILL");
+          child.kill('SIGKILL');
         } catch {
           // Process already exited — ignore.
         }
       }, SHELL_SIGKILL_GRACE_MS);
     }, timeout * 1_000);
 
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       clearTimeout(timeoutTimer);
       clearTimeout(killTimer);
 
@@ -87,10 +91,16 @@ export function execShell(options: ShellOptions): Promise<ShellResult> {
 
 // ── JSON output parser ──────────────────────────────────────────────
 
-export function parseJsonOutput(stdout: string): Record<string, unknown> | null {
+export function parseJsonOutput(
+  stdout: string,
+): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(stdout.trim());
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed)
+    ) {
       return parsed as Record<string, unknown>;
     }
     return null;

@@ -3,7 +3,7 @@ import {
   MISSED_RUN_POLICIES,
   HANDLER_TYPES,
   CANONICAL_STEP_NAMES,
-} from "../constants.js";
+} from '../constants.js';
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 export type MissedRunPolicy = (typeof MISSED_RUN_POLICIES)[number];
@@ -14,7 +14,7 @@ export type CanonicalStepName = (typeof CANONICAL_STEP_NAMES)[number];
 
 export interface RetrySpec {
   attempts: number;
-  backoff: "fixed" | "linear" | "exponential";
+  backoff: 'fixed' | 'linear' | 'exponential';
   /** Duration string ("5s", "500ms") or seconds as a number. */
   initialDelay: string | number;
 }
@@ -72,7 +72,7 @@ export interface GlobalConfig {
   shutdownTimeout: number;
   missedRunPolicy: MissedRunPolicy;
   playwright?: {
-    browser?: "chromium" | "firefox" | "webkit";
+    browser?: 'chromium' | 'firefox' | 'webkit';
     headless?: boolean;
   };
   log: LogLevel;

@@ -1,4 +1,4 @@
-import type { PipelineContext } from "../types/pipeline.js";
+import type { PipelineContext } from '../types/pipeline.js';
 
 // ── Types ───────────────────────────────────────────────────────────
 

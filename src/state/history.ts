@@ -1,15 +1,15 @@
-import fs from "node:fs/promises";
-import fss from "node:fs";
+import fs from 'node:fs/promises';
+import fss from 'node:fs';
 
-import type { StateHistoryEntry } from "../types/state.js";
-import type { StateHistoryConfig } from "../types/config.js";
-import { stateDir, stateHistoryPath } from "../paths.js";
-import { rotateIfNeededSync } from "../logger.js";
+import type { StateHistoryEntry } from '../types/state.js';
+import type { StateHistoryConfig } from '../types/config.js';
+import { stateDir, stateHistoryPath } from '../paths.js';
+import { rotateIfNeededSync } from '../logger.js';
 import {
   DEFAULT_ROTATION_MAX_FILE_SIZE,
   DEFAULT_ROTATION_MAX_FILES,
   STATE_HISTORY_FILE,
-} from "../constants.js";
+} from '../constants.js';
 
 // ── Append (synchronous) ────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ export function appendHistory(
   const maxFiles = rotationCfg.maxFiles ?? DEFAULT_ROTATION_MAX_FILES;
 
   rotateIfNeededSync(filePath, maxFileSize, maxFiles);
-  fss.appendFileSync(filePath, JSON.stringify(entry) + "\n", "utf-8");
+  fss.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf-8');
 }
 
 // ── Read ────────────────────────────────────────────────────────────
@@ -58,8 +58,8 @@ export async function readHistory(
   }
 
   for (const file of files) {
-    const raw = await fs.readFile(file, "utf-8");
-    const lines = raw.split("\n").filter(Boolean);
+    const raw = await fs.readFile(file, 'utf-8');
+    const lines = raw.split('\n').filter(Boolean);
     // Lines within a file are oldest-first; reverse for newest-first
     for (let i = lines.length - 1; i >= 0; i--) {
       entries.push(JSON.parse(lines[i]) as StateHistoryEntry);
@@ -101,7 +101,7 @@ export async function clearHistory(pipelineName: string): Promise<void> {
     try {
       await fs.unlink(rotated);
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") break;
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') break;
       throw err;
     }
   }
@@ -122,6 +122,6 @@ async function unlinkSafe(p: string): Promise<void> {
   try {
     await fs.unlink(p);
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 }

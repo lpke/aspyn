@@ -1,9 +1,9 @@
-import notifier from "node-notifier";
-import { register, type HandlerContext } from "./registry.js";
-import { logger } from "../logger.js";
+import notifier from 'node-notifier';
+import { register, type HandlerContext } from './registry.js';
+import { logger } from '../logger.js';
 
 register({
-  name: "notification-desktop",
+  name: 'notification-desktop',
   sideEffectDefault: true,
 
   async run(_ctx: HandlerContext, input: unknown): Promise<unknown> {
@@ -14,7 +14,7 @@ register({
       sound?: boolean;
     };
 
-    const message = opts.body ?? opts.message ?? "";
+    const message = opts.body ?? opts.message ?? '';
 
     return new Promise<unknown>((resolve, reject) => {
       notifier.notify(
@@ -26,9 +26,14 @@ register({
         (err: Error | null) => {
           if (err) {
             const code = (err as NodeJS.ErrnoException).code;
-            if (code === "ENOENT") {
-              logger.warn("notify-send not available — desktop notification skipped");
-              resolve({ delivered: false, reason: "notify-send not available" });
+            if (code === 'ENOENT') {
+              logger.warn(
+                'notify-send not available — desktop notification skipped',
+              );
+              resolve({
+                delivered: false,
+                reason: 'notify-send not available',
+              });
               return;
             }
             reject(err);

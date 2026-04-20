@@ -1,5 +1,5 @@
-import { createEngine } from "../expr/engine.js";
-import { register, type HandlerContext } from "./registry.js";
+import { createEngine } from '../expr/engine.js';
+import { register, type HandlerContext } from './registry.js';
 
 const engine = createEngine();
 
@@ -17,7 +17,7 @@ function exprContext(ctx: HandlerContext): Record<string, unknown> {
 }
 
 register({
-  name: "expr",
+  name: 'expr',
   async run(ctx: HandlerContext, input: unknown) {
     const { expression } = input as { expression: string };
     const result = await engine.evaluate(expression, exprContext(ctx));

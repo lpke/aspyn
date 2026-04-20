@@ -1,9 +1,9 @@
-import { register, type HandlerContext } from "./registry.js";
-import { DEFAULT_TIMEOUT_SECONDS } from "../constants.js";
-import { parseDurationMs } from "../duration.js";
+import { register, type HandlerContext } from './registry.js';
+import { DEFAULT_TIMEOUT_SECONDS } from '../constants.js';
+import { parseDurationMs } from '../duration.js';
 
 register({
-  name: "webpage",
+  name: 'webpage',
   async run(_ctx: HandlerContext, input: unknown) {
     const { url, waitFor, timeout, javascript } = input as {
       url: string;
@@ -15,10 +15,10 @@ register({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let pw: any;
     try {
-      const mod = "playwright";
+      const mod = 'playwright';
       pw = await import(/* webpackIgnore: true */ mod);
     } catch {
-      throw new Error("Playwright is not installed");
+      throw new Error('Playwright is not installed');
     }
 
     const browser = await pw.chromium.launch({ headless: true });
@@ -28,7 +28,10 @@ register({
       await page.goto(url);
 
       if (waitFor) {
-        const waitTimeoutMs = timeout !== undefined ? parseDurationMs(timeout) : DEFAULT_TIMEOUT_SECONDS * 1000;
+        const waitTimeoutMs =
+          timeout !== undefined
+            ? parseDurationMs(timeout)
+            : DEFAULT_TIMEOUT_SECONDS * 1000;
         await page.waitForSelector(waitFor, { timeout: waitTimeoutMs });
       }
 

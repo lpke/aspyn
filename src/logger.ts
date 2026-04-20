@@ -1,12 +1,15 @@
-import fs from "node:fs/promises";
-import fss from "node:fs";
-import path from "node:path";
-import chalk from "chalk";
-import { DEFAULT_ROTATION_MAX_FILE_SIZE, DEFAULT_ROTATION_MAX_FILES } from "./constants.js";
+import fs from 'node:fs/promises';
+import fss from 'node:fs';
+import path from 'node:path';
+import chalk from 'chalk';
+import {
+  DEFAULT_ROTATION_MAX_FILE_SIZE,
+  DEFAULT_ROTATION_MAX_FILES,
+} from './constants.js';
 
 // ── Types ───────────────────────────────────────────────────────────
 
-import type { LogLevel } from "./types/config.js";
+import type { LogLevel } from './types/config.js';
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -40,10 +43,14 @@ export function parseSize(input: string): number {
   const value = parseFloat(match[1]);
   const unit = match[2];
   switch (unit) {
-    case "kb": return Math.floor(value * 1024);
-    case "mb": return Math.floor(value * 1024 * 1024);
-    case "gb": return Math.floor(value * 1024 * 1024 * 1024);
-    default: return Math.floor(value);
+    case 'kb':
+      return Math.floor(value * 1024);
+    case 'mb':
+      return Math.floor(value * 1024 * 1024);
+    case 'gb':
+      return Math.floor(value * 1024 * 1024 * 1024);
+    default:
+      return Math.floor(value);
   }
 }
 
@@ -70,9 +77,17 @@ export async function rotateIfNeeded(
     const src = i === 1 ? filePath : `${filePath}.${i - 1}`;
     const dst = `${filePath}.${i}`;
     if (i === maxFiles) {
-      try { await fs.unlink(dst); } catch { /* ok */ }
+      try {
+        await fs.unlink(dst);
+      } catch {
+        /* ok */
+      }
     }
-    try { await fs.rename(src, dst); } catch { /* ok */ }
+    try {
+      await fs.rename(src, dst);
+    } catch {
+      /* ok */
+    }
   }
 }
 
@@ -84,9 +99,9 @@ function isoTimestamp(): string {
 
 function timestamp(): string {
   const d = new Date();
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
   return `${h}:${m}:${s}`;
 }
 
@@ -109,26 +124,41 @@ export function rotateIfNeededSync(
     const src = i === 1 ? filePath : `${filePath}.${i - 1}`;
     const dst = `${filePath}.${i}`;
     if (i === maxFiles) {
-      try { fss.unlinkSync(dst); } catch { /* ok */ }
+      try {
+        fss.unlinkSync(dst);
+      } catch {
+        /* ok */
+      }
     }
-    try { fss.renameSync(src, dst); } catch { /* ok */ }
+    try {
+      fss.renameSync(src, dst);
+    } catch {
+      /* ok */
+    }
   }
 }
 
 // ── Format for file (no ANSI) ───────────────────────────────────────
 
-function formatFileLine(ts: string, level: LogLevel, prefix: string | undefined, args: unknown[]): string {
+function formatFileLine(
+  ts: string,
+  level: LogLevel,
+  prefix: string | undefined,
+  args: unknown[],
+): string {
   const parts: string[] = [ts];
-  if (level !== "info") parts.push(`[${level.toUpperCase()}]`);
+  if (level !== 'info') parts.push(`[${level.toUpperCase()}]`);
   if (prefix) parts.push(`[${prefix}]`);
-  parts.push(args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
-  return parts.join(" ") + "\n";
+  parts.push(
+    args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
+  );
+  return parts.join(' ') + '\n';
 }
 
 // ── createLogger ────────────────────────────────────────────────────
 
 export function createLogger(options?: LoggerOptions): Logger {
-  const minLevel = LEVELS[options?.level ?? "info"];
+  const minLevel = LEVELS[options?.level ?? 'info'];
   const prefix = options?.prefix;
   const logFile = options?.logFile;
   const maxFileSize = options?.maxFileSize ?? DEFAULT_ROTATION_MAX_FILE_SIZE;
@@ -141,13 +171,17 @@ export function createLogger(options?: LoggerOptions): Logger {
 
     // Build stderr line
     const parts: string[] = [chalk.dim(ts)];
-    if (level === "debug") parts.push(chalk.dim("[DEBUG]"));
-    else if (level === "warn") parts.push(chalk.yellow("[WARN]"));
-    else if (level === "error") parts.push(chalk.red("[ERROR]"));
+    if (level === 'debug') parts.push(chalk.dim('[DEBUG]'));
+    else if (level === 'warn') parts.push(chalk.yellow('[WARN]'));
+    else if (level === 'error') parts.push(chalk.red('[ERROR]'));
     if (prefix) parts.push(chalk.cyan(`[${prefix}]`));
-    parts.push(args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
+    parts.push(
+      args
+        .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+        .join(' '),
+    );
 
-    process.stderr.write(parts.join(" ") + "\n");
+    process.stderr.write(parts.join(' ') + '\n');
 
     // File mirror (synchronous to avoid lost writes on process exit)
     if (logFile) {
@@ -156,16 +190,18 @@ export function createLogger(options?: LoggerOptions): Logger {
       try {
         fss.mkdirSync(dir, { recursive: true });
         rotateIfNeededSync(logFile, maxFileSize, maxFiles);
-        fss.appendFileSync(logFile, line, "utf-8");
-      } catch { /* best effort */ }
+        fss.appendFileSync(logFile, line, 'utf-8');
+      } catch {
+        /* best effort */
+      }
     }
   }
 
   return {
-    debug: (...args: unknown[]) => log("debug", args),
-    info: (...args: unknown[]) => log("info", args),
-    warn: (...args: unknown[]) => log("warn", args),
-    error: (...args: unknown[]) => log("error", args),
+    debug: (...args: unknown[]) => log('debug', args),
+    info: (...args: unknown[]) => log('info', args),
+    warn: (...args: unknown[]) => log('warn', args),
+    error: (...args: unknown[]) => log('error', args),
   };
 }
 
@@ -177,8 +213,8 @@ let current: Logger = createLogger();
 
 export const logger: Logger = {
   debug: (...a) => current.debug(...a),
-  info:  (...a) => current.info(...a),
-  warn:  (...a) => current.warn(...a),
+  info: (...a) => current.info(...a),
+  warn: (...a) => current.warn(...a),
   error: (...a) => current.error(...a),
 };
 

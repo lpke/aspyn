@@ -1,18 +1,22 @@
-import cron from "node-cron";
-import { listPipelineNames, loadPipelineConfig, loadGlobalConfig } from "./config/loader.js";
-import { runPipeline } from "./pipeline/engine.js";
-import { readState, writeState } from "./state/state.js";
-import { hasCrashedRun } from "./state/journal.js";
-import { parseDurationMs } from "./duration.js";
-import { logger, initGlobalLogger } from "./logger.js";
+import cron from 'node-cron';
+import {
+  listPipelineNames,
+  loadPipelineConfig,
+  loadGlobalConfig,
+} from './config/loader.js';
+import { runPipeline } from './pipeline/engine.js';
+import { readState, writeState } from './state/state.js';
+import { hasCrashedRun } from './state/journal.js';
+import { parseDurationMs } from './duration.js';
+import { logger, initGlobalLogger } from './logger.js';
 import {
   MIN_INTERVAL,
   DAEMON_PIPELINE_SCAN_INTERVAL_MS,
   SHUTDOWN_TIMEOUT_MS,
   RUN_STATUS_INTERRUPTED,
-} from "./constants.js";
-import type { PipelineConfig, MissedRunPolicy } from "./types/config.js";
-import type { PipelineState } from "./types/state.js";
+} from './constants.js';
+import type { PipelineConfig, MissedRunPolicy } from './types/config.js';
+import type { PipelineState } from './types/state.js';
 
 // ── Interval → cron expression ──────────────────────────────────────
 
@@ -39,20 +43,26 @@ function intervalToCron(interval: string): string | null {
 
 // ── Crash recovery (non-interactive) ────────────────────────────────
 
-async function daemonCrashRecovery(name: string, missedRunPolicy: MissedRunPolicy): Promise<void> {
+async function daemonCrashRecovery(
+  name: string,
+  missedRunPolicy: MissedRunPolicy,
+): Promise<void> {
   const crashed = await hasCrashedRun(name);
   if (!crashed) return;
 
   // Mark interrupted in persisted state
   const state = await readState(name);
   if (state) {
-    const patched: PipelineState = { ...state, lastStatus: RUN_STATUS_INTERRUPTED };
+    const patched: PipelineState = {
+      ...state,
+      lastStatus: RUN_STATUS_INTERRUPTED,
+    };
     await writeState(name, patched);
     logger.warn(`[${name}] Marked crashed run as interrupted`);
   }
 
   // Check missed-run policy for overdue pipelines
-  if (missedRunPolicy === "skip") {
+  if (missedRunPolicy === 'skip') {
     logger.info(`[${name}] missedRunPolicy=skip; skipping overdue run`);
     return;
   }
@@ -72,7 +82,7 @@ interface ScheduledPipeline {
 
 export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
   if (opts?.verbose) {
-    initGlobalLogger({ level: "debug" });
+    initGlobalLogger({ level: 'debug' });
   }
 
   const globalCfg = await loadGlobalConfig();
@@ -86,7 +96,9 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
     try {
       cfg = await loadPipelineConfig(name);
     } catch (err) {
-      logger.warn(`[${name}] Failed to load config, skipping: ${(err as Error).message}`);
+      logger.warn(
+        `[${name}] Failed to load config, skipping: ${(err as Error).message}`,
+      );
       return;
     }
 
@@ -97,7 +109,9 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
 
     const cronExpr = intervalToCron(cfg.interval);
     if (!cronExpr) {
-      logger.warn(`[${name}] Could not convert interval "${cfg.interval}" to cron; skipping`);
+      logger.warn(
+        `[${name}] Could not convert interval "${cfg.interval}" to cron; skipping`,
+      );
       return;
     }
 
@@ -126,7 +140,9 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
 
     entry.task = task;
     scheduled.set(name, entry);
-    logger.info(`[${name}] Scheduled with cron "${cronExpr}" (interval: ${cfg.interval})`);
+    logger.info(
+      `[${name}] Scheduled with cron "${cronExpr}" (interval: ${cfg.interval})`,
+    );
   }
 
   // ── Initial scan ────────────────────────────────────────────────
@@ -171,7 +187,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
   function shutdown(): void {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info("Shutting down daemon\u2026");
+    logger.info('Shutting down daemon\u2026');
 
     clearInterval(scanTimer);
 
@@ -186,14 +202,14 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
       .filter((p): p is Promise<void> => p !== null);
 
     const deadline = setTimeout(() => {
-      logger.warn("Shutdown timeout reached, forcing exit");
+      logger.warn('Shutdown timeout reached, forcing exit');
       process.exit(0);
     }, globalCfg.shutdownTimeout ?? SHUTDOWN_TIMEOUT_MS);
 
     Promise.all(inFlight)
       .then(() => {
         clearTimeout(deadline);
-        logger.info("All in-flight runs complete. Exiting.");
+        logger.info('All in-flight runs complete. Exiting.');
         process.exit(0);
       })
       .catch(() => {
@@ -202,8 +218,8 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
       });
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   // Keep the event loop alive
   await new Promise<void>(() => {});

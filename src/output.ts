@@ -1,5 +1,5 @@
-import chalk from "chalk";
-import type { StateHistoryEntry } from "./types/state.js";
+import chalk from 'chalk';
+import type { StateHistoryEntry } from './types/state.js';
 
 // ── State ───────────────────────────────────────────────────────────
 
@@ -9,36 +9,41 @@ let hasPrinted = false;
 
 function write(text: string): void {
   hasPrinted = true;
-  process.stdout.write(text + "\n");
+  process.stdout.write(text + '\n');
 }
 
 function padRight(str: string, len: number): string {
-  return str.length >= len ? str : str + " ".repeat(len - str.length);
+  return str.length >= len ? str : str + ' '.repeat(len - str.length);
 }
 
 function statusColor(status: string): string {
-  if (status === "ok") return chalk.green(status);
-  if (status === "skipped") return chalk.yellow(status);
-  if (status === "halted") return chalk.yellow(status);
-  if (status === "error") return chalk.red(status);
-  if (status === "interrupted") return chalk.red(status);
+  if (status === 'ok') return chalk.green(status);
+  if (status === 'skipped') return chalk.yellow(status);
+  if (status === 'halted') return chalk.yellow(status);
+  if (status === 'error') return chalk.red(status);
+  if (status === 'interrupted') return chalk.red(status);
   return status;
 }
 
 function actionSummary(handlerType: string): string {
   switch (handlerType) {
-    case "http": return "http";
-    case "shell": return "shell";
-    case "notification-desktop": return "notification-desktop";
-    case "log": return "log";
-    default: return handlerType;
+    case 'http':
+      return 'http';
+    case 'shell':
+      return 'shell';
+    case 'notification-desktop':
+      return 'notification-desktop';
+    case 'log':
+      return 'log';
+    default:
+      return handlerType;
   }
 }
 
 // ── Section gap ─────────────────────────────────────────────────────
 
 function sectionGap(): void {
-  if (hasPrinted) write("");
+  if (hasPrinted) write('');
 }
 
 // ── Watch block ─────────────────────────────────────────────────────
@@ -58,15 +63,20 @@ function printWatchBlock(watchName: string, options: WatchBlockOptions): void {
   }
 
   if (dryRunActions) {
-    write(`${chalk.bold("Dry run:")} would execute ${dryRunActions.length} action(s):`);
+    write(
+      `${chalk.bold('Dry run:')} would execute ${dryRunActions.length} action(s):`,
+    );
     for (const a of dryRunActions) {
       write(`  - ${actionSummary(a)}`);
     }
   }
 
   if (result) {
-    write(chalk.bold("Result:"));
-    write("  " + chalk.dim(JSON.stringify(result, null, 2).split("\n").join("\n  ")));
+    write(chalk.bold('Result:'));
+    write(
+      '  ' +
+        chalk.dim(JSON.stringify(result, null, 2).split('\n').join('\n  ')),
+    );
   }
 
   if (error && !result) {
@@ -84,27 +94,30 @@ interface SummaryRow {
 
 function printSummaryTable(rows: SummaryRow[]): void {
   sectionGap();
-  const headers = ["NAME", "STATUS", "DURATION"];
-  const data = rows.map(r => [r.name, r.status, r.duration]);
+  const headers = ['NAME', 'STATUS', 'DURATION'];
+  const data = rows.map((r) => [r.name, r.status, r.duration]);
   const widths = headers.map((h, i) =>
-    Math.max(h.length, ...data.map(r => r[i].length)),
+    Math.max(h.length, ...data.map((r) => r[i].length)),
   );
 
-  write(headers.map((h, i) => chalk.bold(padRight(h, widths[i]))).join("  "));
-  write(chalk.dim(widths.map(w => "-".repeat(w)).join("  ")));
+  write(headers.map((h, i) => chalk.bold(padRight(h, widths[i]))).join('  '));
+  write(chalk.dim(widths.map((w) => '-'.repeat(w)).join('  ')));
   for (const row of data) {
     const cells = [
       padRight(row[0], widths[0]),
-      padRight(statusColor(row[1]), widths[1] + (statusColor(row[1]).length - row[1].length)),
+      padRight(
+        statusColor(row[1]),
+        widths[1] + (statusColor(row[1]).length - row[1].length),
+      ),
       chalk.dim(padRight(row[2], widths[2])),
     ];
-    write(cells.join("  "));
+    write(cells.join('  '));
   }
 }
 
 function printTotalLine(totalMs: number): void {
   const sec = (totalMs / 1000).toFixed(1);
-  write(`${chalk.bold("Total:")} ${chalk.dim(`${sec}s`)}`);
+  write(`${chalk.bold('Total:')} ${chalk.dim(`${sec}s`)}`);
 }
 
 // ── List table ──────────────────────────────────────────────────────
@@ -118,23 +131,29 @@ interface ListRow {
 }
 
 function printListTable(rows: ListRow[]): void {
-  const headers = ["NAME", "INTERVAL", "LAST RUN", "STATUS", "NEXT RUN"];
-  const data = rows.map(r => [r.name, r.interval, r.lastRun, r.status, r.nextRun]);
+  const headers = ['NAME', 'INTERVAL', 'LAST RUN', 'STATUS', 'NEXT RUN'];
+  const data = rows.map((r) => [
+    r.name,
+    r.interval,
+    r.lastRun,
+    r.status,
+    r.nextRun,
+  ]);
   const widths = headers.map((h, i) =>
-    Math.max(h.length, ...data.map(r => r[i].length)),
+    Math.max(h.length, ...data.map((r) => r[i].length)),
   );
 
-  write(headers.map((h, i) => chalk.bold(padRight(h, widths[i]))).join("  "));
-  write(chalk.dim(widths.map(w => "-".repeat(w)).join("  ")));
+  write(headers.map((h, i) => chalk.bold(padRight(h, widths[i]))).join('  '));
+  write(chalk.dim(widths.map((w) => '-'.repeat(w)).join('  ')));
   for (const row of data) {
     const cells = row.map((cell, i) => {
       let styled = cell;
       if (i === 3) styled = statusColor(cell);
-      else if (cell === "never") styled = chalk.dim(cell);
+      else if (cell === 'never') styled = chalk.dim(cell);
       const extra = styled.length - cell.length;
       return padRight(styled, widths[i] + extra);
     });
-    write(cells.join("  "));
+    write(cells.join('  '));
   }
 }
 
@@ -142,9 +161,9 @@ function printListTable(rows: ListRow[]): void {
 
 function printValidation(name: string, ok: boolean, errorMsg?: string): void {
   if (ok) {
-    write(`${chalk.green("✓")} ${name}`);
+    write(`${chalk.green('✓')} ${name}`);
   } else {
-    write(`${chalk.red("✗")} ${name} ${chalk.dim(`(${errorMsg})`)}`);
+    write(`${chalk.red('✗')} ${name} ${chalk.dim(`(${errorMsg})`)}`);
   }
 }
 
@@ -163,32 +182,50 @@ function markExternalOutput(): void {
 
 // ── State History ───────────────────────────────────────────────────
 
-function printStateHistory(entries: StateHistoryEntry[], format: "table" | "json" | "tsv" = "table"): void {
+function printStateHistory(
+  entries: StateHistoryEntry[],
+  format: 'table' | 'json' | 'tsv' = 'table',
+): void {
   if (entries.length === 0) {
-    write("No state history entries.");
+    write('No state history entries.');
     return;
   }
 
-  if (format === "json") {
+  if (format === 'json') {
     write(JSON.stringify(entries, null, 2));
     return;
   }
 
-  if (format === "tsv") {
-    write(["runId", "startedAt", "endedAt", "durationMs", "runNumber", "status", "halt", "error", "warnings", "softErrors"].join("\t"));
+  if (format === 'tsv') {
+    write(
+      [
+        'runId',
+        'startedAt',
+        'endedAt',
+        'durationMs',
+        'runNumber',
+        'status',
+        'halt',
+        'error',
+        'warnings',
+        'softErrors',
+      ].join('\t'),
+    );
     for (const e of entries) {
-      write([
-        e.runId,
-        e.startedAt,
-        e.endedAt,
-        String(e.durationMs),
-        String(e.runNumber),
-        e.status,
-        e.halt ? `${e.halt.atStep}:${e.halt.reason}` : "",
-        e.error ?? "",
-        String(e.warnings.length),
-        String(e.softErrors.length),
-      ].join("\t"));
+      write(
+        [
+          e.runId,
+          e.startedAt,
+          e.endedAt,
+          String(e.durationMs),
+          String(e.runNumber),
+          e.status,
+          e.halt ? `${e.halt.atStep}:${e.halt.reason}` : '',
+          e.error ?? '',
+          String(e.warnings.length),
+          String(e.softErrors.length),
+        ].join('\t'),
+      );
     }
     return;
   }
@@ -199,16 +236,19 @@ function printStateHistory(entries: StateHistoryEntry[], format: "table" | "json
     const status = statusColor(entry.status);
     const dur = chalk.dim(`${entry.durationMs}ms`);
     let line = `${ts}  ${status}  run=#${entry.runNumber}  dur=${dur}`;
-    if (entry.halt) line += `  halt=${chalk.yellow(`${entry.halt.atStep}:${entry.halt.reason}`)}`;
+    if (entry.halt)
+      line += `  halt=${chalk.yellow(`${entry.halt.atStep}:${entry.halt.reason}`)}`;
     if (entry.error) line += `  ${chalk.red(entry.error)}`;
-    if (entry.warnings.length > 0) line += `  warnings=${entry.warnings.length}`;
-    if (entry.softErrors.length > 0) line += `  softErrors=${entry.softErrors.length}`;
+    if (entry.warnings.length > 0)
+      line += `  warnings=${entry.warnings.length}`;
+    if (entry.softErrors.length > 0)
+      line += `  softErrors=${entry.softErrors.length}`;
     write(line);
   }
 }
 
 function printWatchHeader(name: string): void {
-  process.stdout.write(chalk.cyan.bold(name) + "\n");
+  process.stdout.write(chalk.cyan.bold(name) + '\n');
   hasPrinted = true;
 }
 

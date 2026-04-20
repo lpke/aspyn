@@ -1,24 +1,36 @@
-import { load, type CheerioAPI } from "cheerio";
-import { register, type HandlerContext } from "./registry.js";
+import { load, type CheerioAPI } from 'cheerio';
+import { register, type HandlerContext } from './registry.js';
 
 const PSEUDO_RE = /::(text|html|attr\([^)]+\)|\S+)$/;
 
 const ALLOWED_PSEUDOS = new Set([
   // pseudo-elements
-  "::before", "::after",
-  "::first-line", "::first-letter",
-  "::marker", "::placeholder",
-  "::selection", "::backdrop",
+  '::before',
+  '::after',
+  '::first-line',
+  '::first-letter',
+  '::marker',
+  '::placeholder',
+  '::selection',
+  '::backdrop',
   // safe pseudo-classes
-  ":root", ":scope",
-  ":first-child", ":last-child", ":only-child", ":nth-child",
-  ":first-of-type", ":last-of-type", ":only-of-type", ":nth-of-type",
-  ":empty", ":not",
+  ':root',
+  ':scope',
+  ':first-child',
+  ':last-child',
+  ':only-child',
+  ':nth-child',
+  ':first-of-type',
+  ':last-of-type',
+  ':only-of-type',
+  ':nth-of-type',
+  ':empty',
+  ':not',
 ]);
 
 /** Extract the head of a pseudo token (before any parenthesised arg). */
 function pseudoHead(token: string): string {
-  const parenIdx = token.indexOf("(");
+  const parenIdx = token.indexOf('(');
   return parenIdx === -1 ? token : token.slice(0, parenIdx);
 }
 
@@ -32,7 +44,7 @@ function validatePseudos(selector: string): void {
     if (!ALLOWED_PSEUDOS.has(head)) {
       throw new Error(
         `css-selector: unsupported pseudo "${m[0]}" in "${selector}". ` +
-        `Allowed pseudos: ${[...ALLOWED_PSEUDOS].join(", ")}`,
+          `Allowed pseudos: ${[...ALLOWED_PSEUDOS].join(', ')}`,
       );
     }
   }
@@ -45,7 +57,7 @@ function parsePseudo(raw: string): { selector: string; pseudo: string | null } {
     return { selector: raw, pseudo: null };
   }
   const pseudo = match[1];
-  if (pseudo !== "text" && pseudo !== "html" && !pseudo.startsWith("attr(")) {
+  if (pseudo !== 'text' && pseudo !== 'html' && !pseudo.startsWith('attr(')) {
     throw new Error(`css-selector: unknown pseudo "::${pseudo}" in "${raw}"`);
   }
   // Validate remaining selector portion for CSS pseudos
@@ -54,32 +66,40 @@ function parsePseudo(raw: string): { selector: string; pseudo: string | null } {
   return { selector: selectorPart, pseudo };
 }
 
-function extract($: CheerioAPI, selector: string, pseudo: string | null): string | null {
+function extract(
+  $: CheerioAPI,
+  selector: string,
+  pseudo: string | null,
+): string | null {
   const $el = $(selector).first();
   if (!$el.length) return null;
-  if (!pseudo || pseudo === "text") return $el.text();
-  if (pseudo === "html") return $el.html();
+  if (!pseudo || pseudo === 'text') return $el.text();
+  if (pseudo === 'html') return $el.html();
   const attrMatch = pseudo.match(/^attr\((.+)\)$/);
   if (attrMatch) return $el.attr(attrMatch[1]) ?? null;
-  throw new Error(`css-selector: unknown pseudo "::${pseudo}" in "${selector}::${pseudo}"`);
+  throw new Error(
+    `css-selector: unknown pseudo "::${pseudo}" in "${selector}::${pseudo}"`,
+  );
 }
 
 register({
-  name: "css-selector",
+  name: 'css-selector',
   async run(ctx: HandlerContext, input: unknown) {
     const { selectors } = input as { selectors: Record<string, string> };
 
     const raw = ctx.input;
     let html: string | undefined;
-    if (typeof raw === "string") {
+    if (typeof raw === 'string') {
       html = raw;
-    } else if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    } else if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
       const maybe = (raw as Record<string, unknown>).html;
-      if (typeof maybe === "string") html = maybe;
+      if (typeof maybe === 'string') html = maybe;
     }
 
     if (html === undefined) {
-      throw new Error("css-selector: no HTML string found in input (checked html, string)");
+      throw new Error(
+        'css-selector: no HTML string found in input (checked html, string)',
+      );
     }
 
     const $ = load(html);

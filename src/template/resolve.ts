@@ -1,4 +1,4 @@
-import type { ExprEngine } from "../expr/engine.js";
+import type { ExprEngine } from '../expr/engine.js';
 
 // ---------------------------------------------------------------------------
 // Pattern helpers
@@ -10,7 +10,7 @@ const ENV_BRACE = /(?<!\\)\$\{([A-Za-z_][A-Za-z0-9_]*)}/g;
 
 /** Quick check: does the string contain any `${…}` template? */
 export function hasTemplate(str: string): boolean {
-  return str.includes("${");
+  return str.includes('${');
 }
 
 // ---------------------------------------------------------------------------
@@ -20,9 +20,9 @@ export function hasTemplate(str: string): boolean {
 type Mapper = (s: string) => string | Promise<string>;
 
 function walkSync(value: unknown, fn: (s: string) => string): unknown {
-  if (typeof value === "string") return fn(value);
+  if (typeof value === 'string') return fn(value);
   if (Array.isArray(value)) return value.map((v) => walkSync(v, fn));
-  if (value !== null && typeof value === "object") {
+  if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       out[k] = walkSync(v, fn);
@@ -32,10 +32,14 @@ function walkSync(value: unknown, fn: (s: string) => string): unknown {
   return value;
 }
 
-async function walkAsync(value: unknown, fn: (s: string) => Promise<unknown>): Promise<unknown> {
-  if (typeof value === "string") return fn(value);
-  if (Array.isArray(value)) return Promise.all(value.map((v) => walkAsync(v, fn)));
-  if (value !== null && typeof value === "object") {
+async function walkAsync(
+  value: unknown,
+  fn: (s: string) => Promise<unknown>,
+): Promise<unknown> {
+  if (typeof value === 'string') return fn(value);
+  if (Array.isArray(value))
+    return Promise.all(value.map((v) => walkAsync(v, fn)));
+  if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       out[k] = await walkAsync(v, fn);
@@ -50,19 +54,19 @@ async function walkAsync(value: unknown, fn: (s: string) => Promise<unknown>): P
 // ---------------------------------------------------------------------------
 
 export function resolveEnv(value: unknown): unknown {
-	return walkSync(value, (s) => {
-		// Replace ${VAR} first (greedy identifier only)
-		let result = s.replace(ENV_BRACE, (match, name: string) =>
-			process.env[name] !== undefined ? process.env[name]! : match
-		);
-		// Replace bare $VAR
-		result = result.replace(ENV_BARE, (match, name: string) =>
-			process.env[name] !== undefined ? process.env[name]! : match
-		);
-		// Replace escaped \$ with literal $
-		result = result.replace(/\\\$/g, "$");
-		return result;
-	});
+  return walkSync(value, (s) => {
+    // Replace ${VAR} first (greedy identifier only)
+    let result = s.replace(ENV_BRACE, (match, name: string) =>
+      process.env[name] !== undefined ? process.env[name]! : match,
+    );
+    // Replace bare $VAR
+    result = result.replace(ENV_BARE, (match, name: string) =>
+      process.env[name] !== undefined ? process.env[name]! : match,
+    );
+    // Replace escaped \$ with literal $
+    result = result.replace(/\\\$/g, '$');
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -73,23 +77,25 @@ export function resolveEnv(value: unknown): unknown {
  * Find the innermost `${...}` expression (no nested `${` inside).
  * Returns [fullMatch, expr, startIndex] or null.
  */
-function findInnermost(s: string): { start: number; end: number; expr: string } | null {
+function findInnermost(
+  s: string,
+): { start: number; end: number; expr: string } | null {
   // Scan for `${` — pick the last `${` before the first `}` that closes it.
   let i = 0;
   while (i < s.length) {
-    const openIdx = s.indexOf("${", i);
+    const openIdx = s.indexOf('${', i);
     if (openIdx === -1) return null;
 
     // Find the matching `}`, but if we hit another `${` first, restart from there.
     let j = openIdx + 2;
     let innerOpen = openIdx;
     while (j < s.length) {
-      if (s[j] === "}" ) {
+      if (s[j] === '}') {
         // `innerOpen` is the last `${` before this `}`
         const expr = s.slice(innerOpen + 2, j);
         return { start: innerOpen, end: j + 1, expr };
       }
-      if (s[j] === "$" && j + 1 < s.length && s[j + 1] === "{") {
+      if (s[j] === '$' && j + 1 < s.length && s[j + 1] === '{') {
         innerOpen = j;
         j += 2;
         continue;
@@ -123,8 +129,10 @@ async function resolveString(
 
     const evaluated = await engine.evaluate(match.expr.trim(), ctx);
 
-    const replacement = evaluated === undefined || evaluated === null ? "" : String(evaluated);
-    result = result.slice(0, match.start) + replacement + result.slice(match.end);
+    const replacement =
+      evaluated === undefined || evaluated === null ? '' : String(evaluated);
+    result =
+      result.slice(0, match.start) + replacement + result.slice(match.end);
   }
   return result;
 }

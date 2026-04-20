@@ -1,5 +1,5 @@
-import type { StepOutput, RunStatus, Halt, SoftError } from "./pipeline.js";
-import { JOURNAL_EVENTS } from "../constants.js";
+import type { StepOutput, RunStatus, Halt, SoftError } from './pipeline.js';
+import { JOURNAL_EVENTS } from '../constants.js';
 
 export type JournalEventType = (typeof JOURNAL_EVENTS)[number];
 
@@ -33,28 +33,28 @@ export interface StateHistoryEntry {
 // ── Journal events (run.lock.jsonl) ─────────────────────────────────
 
 export interface JournalRunStart {
-  type: "run_start";
+  type: 'run_start';
   runId: string;
   pid: number;
   startedAt: string;
 }
 
 export interface JournalStepStart {
-  type: "step_start";
+  type: 'step_start';
   runId: string;
   name: string;
   startedAt: string;
 }
 
 export interface JournalStepOutput {
-  type: "step_output";
+  type: 'step_output';
   runId: string;
   name: string;
   output: StepOutput;
 }
 
 export interface JournalStepEnd {
-  type: "step_end";
+  type: 'step_end';
   runId: string;
   name: string;
   status: RunStatus;
@@ -62,13 +62,13 @@ export interface JournalStepEnd {
 }
 
 export interface JournalContextFile {
-  type: "context_file";
+  type: 'context_file';
   runId: string;
   path: string;
 }
 
 export interface JournalRunEnd {
-  type: "run_end";
+  type: 'run_end';
   runId: string;
   status: RunStatus;
   endedAt: string;

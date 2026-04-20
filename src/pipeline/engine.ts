@@ -1,13 +1,13 @@
-import fs from "node:fs";
-import readline from "node:readline";
-import path from "node:path";
-import "../handlers/register-all.js";
+import fs from 'node:fs';
+import readline from 'node:readline';
+import path from 'node:path';
+import '../handlers/register-all.js';
 
-import { isDeepStrictEqual } from "node:util";
-import { ulid } from "ulidx";
-import { loadPipelineConfig, loadGlobalConfig } from "../config/loader.js";
-import { acquireLock, releaseLock } from "../state/lock.js";
-import { readState, writeState } from "../state/state.js";
+import { isDeepStrictEqual } from 'node:util';
+import { ulid } from 'ulidx';
+import { loadPipelineConfig, loadGlobalConfig } from '../config/loader.js';
+import { acquireLock, releaseLock } from '../state/lock.js';
+import { readState, writeState } from '../state/state.js';
 import {
   appendEvent,
   hasCrashedRun,
@@ -17,21 +17,21 @@ import {
   readJournal,
   truncateJournalToRunStart,
   lastStepOutputFromJournal,
-} from "../state/journal.js";
-import { appendHistory } from "../state/history.js";
-import { lookup } from "../handlers/registry.js";
-import { createEngine, type ExprEngine } from "../expr/engine.js";
-import { resolveRuntime } from "../template/resolve.js";
-import { parseDurationMs } from "../duration.js";
-import { contextFilePath } from "../paths.js";
-import { logger, initGlobalLogger } from "../logger.js";
+} from '../state/journal.js';
+import { appendHistory } from '../state/history.js';
+import { lookup } from '../handlers/registry.js';
+import { createEngine, type ExprEngine } from '../expr/engine.js';
+import { resolveRuntime } from '../template/resolve.js';
+import { parseDurationMs } from '../duration.js';
+import { contextFilePath } from '../paths.js';
+import { logger, initGlobalLogger } from '../logger.js';
 import type {
   PipelineConfig,
   StepObject,
   RetrySpec,
   GlobalConfig,
   Step,
-} from "../types/config.js";
+} from '../types/config.js';
 import type {
   PipelineContext,
   StepOutput,
@@ -41,12 +41,9 @@ import type {
   RunOptions,
   RunResult,
   OnceResult,
-} from "../types/pipeline.js";
-import { isHandlerHalt } from "../types/pipeline.js";
-import type {
-  PipelineState,
-  StateHistoryEntry,
-} from "../types/state.js";
+} from '../types/pipeline.js';
+import { isHandlerHalt } from '../types/pipeline.js';
+import type { PipelineState, StateHistoryEntry } from '../types/state.js';
 import {
   DEFAULT_TIMEOUT_SECONDS,
   RUN_STATUS_OK,
@@ -59,7 +56,7 @@ import {
   HALT_REASON_EXPR_THROW,
   HALT_REASON_HANDLER_THROW,
   HALT_REASON_ASPYN_LEVEL,
-} from "../constants.js";
+} from '../constants.js';
 
 export type { RunOptions, RunResult };
 
@@ -73,9 +70,17 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function normaliseStep(step: Step, index: number, fallbackName?: string): StepObject {
-  if (typeof step === "string") {
-    return { name: fallbackName ?? `step-${index}`, type: "shell", input: step };
+function normaliseStep(
+  step: Step,
+  index: number,
+  fallbackName?: string,
+): StepObject {
+  if (typeof step === 'string') {
+    return {
+      name: fallbackName ?? `step-${index}`,
+      type: 'shell',
+      input: step,
+    };
   }
   if (!step.name) {
     return { ...step, name: fallbackName ?? `step-${index}` };
@@ -86,9 +91,9 @@ function normaliseStep(step: Step, index: number, fallbackName?: string): StepOb
 function backoffDelay(spec: RetrySpec, attempt: number): number {
   const baseMs = parseDurationMs(spec.initialDelay);
   switch (spec.backoff) {
-    case "linear":
+    case 'linear':
       return baseMs * attempt;
-    case "exponential":
+    case 'exponential':
       return baseMs * 2 ** (attempt - 1);
     default:
       return baseMs;
@@ -126,17 +131,20 @@ function buildExprContext(ctx: PipelineContext): Record<string, unknown> {
 function resolveStepIndex(
   steps: StepObject[],
   ref: string | number | undefined,
-  fieldName: "from" | "until",
+  fieldName: 'from' | 'until',
 ): number | undefined {
   if (ref === undefined) return undefined;
-  if (typeof ref === "number") {
+  if (typeof ref === 'number') {
     if (ref < 0 || ref >= steps.length) {
-      throw new Error(`--${fieldName} index ${ref} out of range (0..${steps.length - 1})`);
+      throw new Error(
+        `--${fieldName} index ${ref} out of range (0..${steps.length - 1})`,
+      );
     }
     return ref;
   }
   const idx = steps.findIndex((s) => s.name === ref);
-  if (idx === -1) throw new Error(`--${fieldName} references unknown step "${ref}"`);
+  if (idx === -1)
+    throw new Error(`--${fieldName} references unknown step "${ref}"`);
   return idx;
 }
 
@@ -149,7 +157,10 @@ function withTimeout<T>(
 ): { result: Promise<T>; cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms);
+    timer = setTimeout(
+      () => reject(new Error(`Timeout after ${ms}ms: ${label}`)),
+      ms,
+    );
   });
 
   return {
@@ -161,19 +172,26 @@ function withTimeout<T>(
 }
 
 function pipelineTimeoutError(stepName: string | null, ms: number) {
-  return { message: `Pipeline timed out after ${ms}ms`, step: stepName, kind: "pipeline_timeout" as const };
+  return {
+    message: `Pipeline timed out after ${ms}ms`,
+    step: stepName,
+    kind: 'pipeline_timeout' as const,
+  };
 }
 
 // ── Crash recovery prompt ───────────────────────────────────────────
 
-function promptCrashRecovery(): Promise<"continue" | "reset"> {
-  if (!process.stdin.isTTY) return Promise.resolve("reset");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+function promptCrashRecovery(): Promise<'continue' | 'reset'> {
+  if (!process.stdin.isTTY) return Promise.resolve('reset');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
   return new Promise((resolve) => {
-    rl.question("Prior run crashed. [c]ontinue or [r]eset? [r] ", (answer) => {
+    rl.question('Prior run crashed. [c]ontinue or [r]eset? [r] ', (answer) => {
       rl.close();
       const a = answer.trim().toLowerCase();
-      resolve(a === "c" || a === "continue" ? "continue" : "reset");
+      resolve(a === 'c' || a === 'continue' ? 'continue' : 'reset');
     });
   });
 }
@@ -185,7 +203,7 @@ async function executeStep(
   ctx: PipelineContext,
   resolvedInput: unknown,
 ): Promise<unknown> {
-  if (!handler) throw new Error("Handler not found");
+  if (!handler) throw new Error('Handler not found');
   return handler.run(ctx, resolvedInput);
 }
 
@@ -204,11 +222,12 @@ async function runPipelineOnce(
   crashed: boolean,
   crashResumeInput: unknown,
 ): Promise<OnceResult> {
-const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
+  const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
   const runNumber = (prevState?.runCount ?? 0) + 1;
 
-  const fromIdx = resolveStepIndex(allSteps, opts.from, "from") ?? 0;
-  const untilIdx = resolveStepIndex(allSteps, opts.until, "until") ?? allSteps.length - 1;
+  const fromIdx = resolveStepIndex(allSteps, opts.from, 'from') ?? 0;
+  const untilIdx =
+    resolveStepIndex(allSteps, opts.until, 'until') ?? allSteps.length - 1;
 
   // --from predecessor validation: ensure tracked predecessors are hydrated
   if (opts.from !== undefined && fromIdx > 0 && !opts.replaySideEffects) {
@@ -219,21 +238,24 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
       if (tracked && !(step.name in crashResumeSteps)) {
         throw new Error(
           `--from: predecessor step "${step.name}" (index ${i}) has no recorded output in the journal. ` +
-          `Ensure it has track: true and a prior run completed it.`,
+            `Ensure it has track: true and a prior run completed it.`,
         );
       }
     }
   }
 
   // --from: warn about skipped side-effect steps; --replay-side-effects overrides
-  const effectiveFromIdx = (opts.from !== undefined && opts.replaySideEffects) ? 0 : fromIdx;
+  const effectiveFromIdx =
+    opts.from !== undefined && opts.replaySideEffects ? 0 : fromIdx;
   if (opts.from !== undefined && !opts.replaySideEffects && fromIdx > 0) {
     for (let i = 0; i < fromIdx; i++) {
       const step = allSteps[i];
       const handler = lookup(step.type);
       const se = step.sideEffect ?? handler?.sideEffectDefault ?? false;
       if (se) {
-        logger.warn(`--from: skipping side-effect step "${step.name}" (index ${i}); use --replay-side-effects to force`);
+        logger.warn(
+          `--from: skipping side-effect step "${step.name}" (index ${i}); use --replay-side-effects to force`,
+        );
       }
     }
   }
@@ -260,11 +282,17 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
   const warnings: Array<{ step: string; message: string }> = [];
   let finalStatus: RunStatus = RUN_STATUS_OK;
   let halt: Halt | undefined;
-  let runError: { message: string; step: string | null; kind?: "pipeline_timeout" } | undefined;
-  let lastValues: Record<string, StepOutput> = { ...(prevState?.lastValues ?? {}) };
+  let runError:
+    | { message: string; step: string | null; kind?: 'pipeline_timeout' }
+    | undefined;
+  let lastValues: Record<string, StepOutput> = {
+    ...(prevState?.lastValues ?? {}),
+  };
 
   // Pipeline-level timeout — a rejected promise that races against each step
-  const pipelineTimeoutMs = parseDurationMs(cfg.timeout ?? globalCfg.defaultTimeout);
+  const pipelineTimeoutMs = parseDurationMs(
+    cfg.timeout ?? globalCfg.defaultTimeout,
+  );
   let pipelineTimedOut = false;
   let rejectPipelineTimeout: ((err: Error) => void) | undefined;
   const pipelineTimeoutPromise = new Promise<never>((_, reject) => {
@@ -276,7 +304,8 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
   }, pipelineTimeoutMs);
 
   try {
-    let skipUntilAfterCrash = crashed && opts.continueFromCrash && crashResumeAfter !== null;
+    let skipUntilAfterCrash =
+      crashed && opts.continueFromCrash && crashResumeAfter !== null;
 
     // Track the last step that executed for timeout attribution
     let lastExecutedStep: string | null = null;
@@ -303,10 +332,24 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
 
       // Evaluate `when` condition
       if (stepDef.when) {
-        const whenResult = await engine.evaluate(stepDef.when, buildExprContext(ctx));
+        const whenResult = await engine.evaluate(
+          stepDef.when,
+          buildExprContext(ctx),
+        );
         if (!whenResult) {
-          appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
-          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_SKIPPED, endedAt: nowIso() });
+          appendEvent(name, {
+            type: 'step_start',
+            runId,
+            name: stepDef.name,
+            startedAt: nowIso(),
+          });
+          appendEvent(name, {
+            type: 'step_end',
+            runId,
+            name: stepDef.name,
+            status: RUN_STATUS_SKIPPED,
+            endedAt: nowIso(),
+          });
           logger.debug(`Step "${stepDef.name}" skipped (when: falsy)`);
           continue;
         }
@@ -315,19 +358,45 @@ const allSteps = cfg.pipeline.map((s, i) => normaliseStep(s, i));
       // Resolve handler
       const handler = lookup(stepDef.type);
       if (!handler) {
-        appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
+        appendEvent(name, {
+          type: 'step_start',
+          runId,
+          name: stepDef.name,
+          startedAt: nowIso(),
+        });
         halt = { atStep: stepDef.name, reason: HALT_REASON_ASPYN_LEVEL };
         finalStatus = RUN_STATUS_HALTED;
-        runError = { message: `Unknown handler type "${stepDef.type}"`, step: stepDef.name };
-        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+        runError = {
+          message: `Unknown handler type "${stepDef.type}"`,
+          step: stepDef.name,
+        };
+        appendEvent(name, {
+          type: 'step_end',
+          runId,
+          name: stepDef.name,
+          status: RUN_STATUS_HALTED,
+          endedAt: nowIso(),
+        });
         break;
       }
 
       // Dry run: skip side-effect steps (§1)
-const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? false;
+      const effectiveSideEffect =
+        stepDef.sideEffect ?? handler.sideEffectDefault ?? false;
       if (opts.dry && effectiveSideEffect) {
-        appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
-        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_SKIPPED, endedAt: nowIso() });
+        appendEvent(name, {
+          type: 'step_start',
+          runId,
+          name: stepDef.name,
+          startedAt: nowIso(),
+        });
+        appendEvent(name, {
+          type: 'step_end',
+          runId,
+          name: stepDef.name,
+          status: RUN_STATUS_SKIPPED,
+          endedAt: nowIso(),
+        });
         logger.info(`[dry] Skipping side-effect step "${stepDef.name}"`);
         ctx.steps[stepDef.name] = null;
         ctx.input = null;
@@ -342,10 +411,12 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
       );
 
       // Step timeout: stepDef.timeout → globalCfg.defaultTimeout (independent of pipeline timeout)
-      const stepTimeoutMs = parseDurationMs(stepDef.timeout ?? globalCfg.defaultTimeout);
+      const stepTimeoutMs = parseDurationMs(
+        stepDef.timeout ?? globalCfg.defaultTimeout,
+      );
 
       // Write context file for shell steps
-      if (stepDef.type === "shell") {
+      if (stepDef.type === 'shell') {
         const ctxPath = contextFilePath(name);
         fs.mkdirSync(path.dirname(ctxPath), { recursive: true });
         fs.writeFileSync(ctxPath, JSON.stringify(ctx));
@@ -358,13 +429,18 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
       let stepOutput: unknown = undefined;
       let stepError: Error | undefined;
 
-      appendEvent(name, { type: "step_start", runId, name: stepDef.name, startedAt: nowIso() });
+      appendEvent(name, {
+        type: 'step_start',
+        runId,
+        name: stepDef.name,
+        startedAt: nowIso(),
+      });
       lastExecutedStep = stepDef.name;
 
-      if (stepDef.type === "shell") {
+      if (stepDef.type === 'shell') {
         const ctxPath = contextFilePath(name);
         ctx.__contextFile = ctxPath;
-        appendEvent(name, { type: "context_file", runId, path: ctxPath });
+        appendEvent(name, { type: 'context_file', runId, path: ctxPath });
       }
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -407,41 +483,95 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
       if (pipelineTimedOut) {
         finalStatus = RUN_STATUS_ERROR;
         runError = pipelineTimeoutError(stepDef.name, pipelineTimeoutMs);
-        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_ERROR, endedAt: nowIso() });
+        appendEvent(name, {
+          type: 'step_end',
+          runId,
+          name: stepDef.name,
+          status: RUN_STATUS_ERROR,
+          endedAt: nowIso(),
+        });
         break;
       }
 
       if (stepError) {
         // Gate expr throw → halt (§9)
-        if (stepDef.type === GATE_HANDLER_TYPE && !stepDef.continueOnError && !cfg.proceedOnError) {
+        if (
+          stepDef.type === GATE_HANDLER_TYPE &&
+          !stepDef.continueOnError &&
+          !cfg.proceedOnError
+        ) {
           halt = { atStep: stepDef.name, reason: HALT_REASON_EXPR_THROW };
           finalStatus = RUN_STATUS_HALTED;
-          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+          appendEvent(name, {
+            type: 'step_end',
+            runId,
+            name: stepDef.name,
+            status: RUN_STATUS_HALTED,
+            endedAt: nowIso(),
+          });
           break;
         }
 
         if (stepDef.continueOnError) {
-          softErrors.push({ step: stepDef.name, message: stepError.message, handled: "continueOnError" });
+          softErrors.push({
+            step: stepDef.name,
+            message: stepError.message,
+            handled: 'continueOnError',
+          });
           ctx.__error = { step: stepDef.name, message: stepError.message };
           ctx.__failed = stepDef.name;
-          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_ERROR, endedAt: nowIso() });
-          logger.warn(`Step "${stepDef.name}" failed (continueOnError): ${stepError.message}`);
+          appendEvent(name, {
+            type: 'step_end',
+            runId,
+            name: stepDef.name,
+            status: RUN_STATUS_ERROR,
+            endedAt: nowIso(),
+          });
+          logger.warn(
+            `Step "${stepDef.name}" failed (continueOnError): ${stepError.message}`,
+          );
           continue;
         } else if (cfg.proceedOnError) {
-          softErrors.push({ step: stepDef.name, message: stepError.message, handled: "proceedOnError" });
+          softErrors.push({
+            step: stepDef.name,
+            message: stepError.message,
+            handled: 'proceedOnError',
+          });
           ctx.__error = { step: stepDef.name, message: stepError.message };
           ctx.__failed = stepDef.name;
-          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_ERROR, endedAt: nowIso() });
-          logger.warn(`Step "${stepDef.name}" failed (proceedOnError): ${stepError.message}`);
+          appendEvent(name, {
+            type: 'step_end',
+            runId,
+            name: stepDef.name,
+            status: RUN_STATUS_ERROR,
+            endedAt: nowIso(),
+          });
+          logger.warn(
+            `Step "${stepDef.name}" failed (proceedOnError): ${stepError.message}`,
+          );
           continue;
         } else {
           finalStatus = RUN_STATUS_ERROR;
           runError = { message: stepError.message, step: stepDef.name };
-          appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_ERROR, endedAt: nowIso() });
+          appendEvent(name, {
+            type: 'step_end',
+            runId,
+            name: stepDef.name,
+            status: RUN_STATUS_ERROR,
+            endedAt: nowIso(),
+          });
 
           // Run step-level onError hook
           if (stepDef.onError) {
-            await runOnErrorHook(stepDef.onError, name, runId, engine, ctx, stepDef.name, stepError.message);
+            await runOnErrorHook(
+              stepDef.onError,
+              name,
+              runId,
+              engine,
+              ctx,
+              stepDef.name,
+              stepError.message,
+            );
           }
           break;
         }
@@ -449,10 +579,22 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
 
       // Check handler halt signal (§9)
       if (isHandlerHalt(stepOutput)) {
-        halt = { atStep: stepDef.name, reason: stepOutput.reason === "aspyn_level" ? HALT_REASON_ASPYN_LEVEL : HALT_REASON_HANDLER_THROW };
+        halt = {
+          atStep: stepDef.name,
+          reason:
+            stepOutput.reason === 'aspyn_level'
+              ? HALT_REASON_ASPYN_LEVEL
+              : HALT_REASON_HANDLER_THROW,
+        };
         runError = { message: stepOutput.message, step: stepDef.name };
         finalStatus = RUN_STATUS_HALTED;
-        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+        appendEvent(name, {
+          type: 'step_end',
+          runId,
+          name: stepDef.name,
+          status: RUN_STATUS_HALTED,
+          endedAt: nowIso(),
+        });
         break;
       }
 
@@ -461,7 +603,13 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
         halt = { atStep: stepDef.name, reason: HALT_REASON_GATE_FALSY };
         finalStatus = RUN_STATUS_HALTED;
         ctx.steps[stepDef.name] = stepOutput;
-        appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_HALTED, endedAt: nowIso() });
+        appendEvent(name, {
+          type: 'step_end',
+          runId,
+          name: stepDef.name,
+          status: RUN_STATUS_HALTED,
+          endedAt: nowIso(),
+        });
         break;
       }
 
@@ -472,20 +620,40 @@ const effectiveSideEffect = stepDef.sideEffect ?? handler.sideEffectDefault ?? f
       // Track and detect changes — only for tracked steps (§2, §11)
       const tracked = isTracked(stepDef, handler, i, allSteps.length);
       if (tracked) {
-        appendEvent(name, { type: "step_output", runId, name: stepDef.name, output: stepOutput });
+        appendEvent(name, {
+          type: 'step_output',
+          runId,
+          name: stepDef.name,
+          output: stepOutput,
+        });
         const prevVal = (prevState?.lastValues ?? {})[stepDef.name];
-        const changed = prevVal === undefined || !isDeepStrictEqual(prevVal, stepOutput);
+        const changed =
+          prevVal === undefined || !isDeepStrictEqual(prevVal, stepOutput);
         changedMap[stepDef.name] = changed;
         ctx.changed = { ...changedMap };
         lastValues[stepDef.name] = stepOutput;
       }
 
-      appendEvent(name, { type: "step_end", runId, name: stepDef.name, status: RUN_STATUS_OK, endedAt: nowIso() });
+      appendEvent(name, {
+        type: 'step_end',
+        runId,
+        name: stepDef.name,
+        status: RUN_STATUS_OK,
+        endedAt: nowIso(),
+      });
     }
 
     // Pipeline-level onError hook
     if (finalStatus === RUN_STATUS_ERROR && cfg.onError && runError) {
-      await runOnErrorHook(cfg.onError, name, runId, engine, ctx, runError.step ?? "(pipeline)", runError.message);
+      await runOnErrorHook(
+        cfg.onError,
+        name,
+        runId,
+        engine,
+        ctx,
+        runError.step ?? '(pipeline)',
+        runError.message,
+      );
     }
   } finally {
     clearTimeout(pipelineTimer);
@@ -515,7 +683,7 @@ export async function runPipeline(
 
   // --verbose overrides log level
   if (opts.verbose) {
-    initGlobalLogger({ level: "debug" });
+    initGlobalLogger({ level: 'debug' });
   }
 
   // 1. Load configs
@@ -525,7 +693,7 @@ export async function runPipeline(
   // 2. Acquire lock
   const lock = await acquireLock(name);
   if (!lock) {
-    return { status: RUN_STATUS_INTERRUPTED, runId: "" };
+    return { status: RUN_STATUS_INTERRUPTED, runId: '' };
   }
 
   // Generate runId after lock acquisition (§17)
@@ -534,7 +702,7 @@ export async function runPipeline(
   // Validate conflicting flags
   if (opts.from !== undefined && opts.continueFromCrash) {
     await releaseLock(lock);
-    throw new Error("--from and --continue are conflicting options");
+    throw new Error('--from and --continue are conflicting options');
   }
 
   // 3. Check crashed run
@@ -545,7 +713,7 @@ export async function runPipeline(
     } else if (!opts.continueFromCrash) {
       // TTY prompt
       const choice = await promptCrashRecovery();
-      if (choice === "continue") {
+      if (choice === 'continue') {
         opts = { ...opts, continueFromCrash: true };
       } else {
         await clearJournal(name);
@@ -587,7 +755,7 @@ export async function runPipeline(
   try {
     // Emit run_start once before the retry loop (§7)
     appendEvent(name, {
-      type: "run_start",
+      type: 'run_start',
       runId,
       pid: process.pid,
       startedAt,
@@ -600,17 +768,32 @@ export async function runPipeline(
       }
 
       result = await runPipelineOnce(
-        name, opts, cfg, globalCfg, prevState,
-        runId, startedAt,
-        crashResumeSteps, crashResumeAfter, crashed, crashResumeInput,
+        name,
+        opts,
+        cfg,
+        globalCfg,
+        prevState,
+        runId,
+        startedAt,
+        crashResumeSteps,
+        crashResumeAfter,
+        crashed,
+        crashResumeInput,
       );
 
       // Only retry on error (but not pipeline timeout)
-      if (result.status !== RUN_STATUS_ERROR || result.pipelineTimedOut || pAttempt >= pipelineMaxAttempts) break;
+      if (
+        result.status !== RUN_STATUS_ERROR ||
+        result.pipelineTimedOut ||
+        pAttempt >= pipelineMaxAttempts
+      )
+        break;
 
       if (pipelineRetry) {
         const delay = backoffDelay(pipelineRetry, pAttempt);
-        logger.debug(`Pipeline attempt ${pAttempt} failed, retrying in ${delay}ms`);
+        logger.debug(
+          `Pipeline attempt ${pAttempt} failed, retrying in ${delay}ms`,
+        );
         await sleep(delay);
       }
     }
@@ -622,10 +805,11 @@ export async function runPipeline(
     const runNumber = (prevState?.runCount ?? 0) + 1;
 
     // Journal run_end
-    appendEvent(name, { type: "run_end", runId, status: r.status, endedAt });
+    appendEvent(name, { type: 'run_end', runId, status: r.status, endedAt });
 
     // State history
-    const stateHistoryCfg = cfg.stateHistory ?? globalCfg.stateHistory ?? { enabled: true };
+    const stateHistoryCfg = cfg.stateHistory ??
+      globalCfg.stateHistory ?? { enabled: true };
     if (stateHistoryCfg.enabled !== false) {
       const entry: StateHistoryEntry = {
         runId,
@@ -687,7 +871,7 @@ async function runOnErrorHook(
   failedStep: string,
   errorMessage: string,
 ): Promise<void> {
-const hookDef = normaliseStep(hookStep, -1, "onError");
+  const hookDef = normaliseStep(hookStep, -1, 'onError');
 
   const handler = lookup(hookDef.type);
   if (!handler) {
@@ -709,11 +893,30 @@ const hookDef = normaliseStep(hookStep, -1, "onError");
       buildExprContext(hookCtx),
     );
 
-    appendEvent(pipelineName, { type: "step_start", runId, name: hookDef.name, startedAt: nowIso() });
+    appendEvent(pipelineName, {
+      type: 'step_start',
+      runId,
+      name: hookDef.name,
+      startedAt: nowIso(),
+    });
     await executeStep(handler, hookCtx, resolvedInput);
-    appendEvent(pipelineName, { type: "step_end", runId, name: hookDef.name, status: RUN_STATUS_OK, endedAt: nowIso() });
+    appendEvent(pipelineName, {
+      type: 'step_end',
+      runId,
+      name: hookDef.name,
+      status: RUN_STATUS_OK,
+      endedAt: nowIso(),
+    });
   } catch (err) {
-    logger.error(`onError hook "${hookDef.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
-    appendEvent(pipelineName, { type: "step_end", runId, name: hookDef.name, status: RUN_STATUS_ERROR, endedAt: nowIso() });
+    logger.error(
+      `onError hook "${hookDef.name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    appendEvent(pipelineName, {
+      type: 'step_end',
+      runId,
+      name: hookDef.name,
+      status: RUN_STATUS_ERROR,
+      endedAt: nowIso(),
+    });
   }
 }
