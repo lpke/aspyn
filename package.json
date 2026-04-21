@@ -1,32 +1,26 @@
 {
   "name": "aspyn",
-  "description": "Scriptable, config-driven watch pipelines.",
-  "keywords": [
-    "watch",
-    "monitor",
-    "pipeline",
-    "scheduler",
-    "daemon",
-    "cron",
-    "automation",
-    "alerting",
-    "notifications",
-    "scraping",
-    "cli",
-    "jsonc",
-    "config-driven",
-    "scriptable",
-    "unix"
-  ],
+  "version": "2.0.0-alpha",
   "author": "luke@lpdev.io",
-  "version": "2.0.0-alpha.0",
+  "description": "A local pipeline engine that gives your scripts a memory.",
+  "homepage": "https://github.com/lpke/aspyn#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lpke/aspyn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lpke/aspyn/issues"
+  },
   "type": "module",
   "scripts": {
+    "dev": "tsx src/cli.ts",
     "build": "tsc",
     "postbuild": "chmod +x dist/cli.js",
-    "dev": "tsx src/cli.ts",
     "prepublishOnly": "pnpm build"
   },
+  "files": [
+    "dist"
+  ],
   "bin": {
     "aspyn": "./dist/cli.js"
   },
@@ -38,10 +32,6 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
-  "files": [
-    "dist"
-  ],
-  "license": "AGPL-3.0-only",
   "dependencies": {
     "chalk": "^5.6.2",
     "cheerio": "^1.2.0",
@@ -51,5 +41,28 @@
     "node-cron": "^4.2.1",
     "node-notifier": "^10.0.1",
     "ulidx": "^2.4.1"
-  }
+  },
+  "keywords": [
+    "pipeline",
+    "cli",
+    "scripting",
+    "automation",
+    "config-driven",
+    "scheduler",
+    "state",
+    "daemon",
+    "cron",
+    "unix",
+    "local-first",
+    "scraping",
+    "change-detection",
+    "notifications",
+    "jsonc",
+    "xdg",
+    "http",
+    "node",
+    "typescript",
+    "pnpm"
+  ],
+  "license": "AGPL-3.0-only"
 }

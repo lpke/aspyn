@@ -1,10 +1,10 @@
 # 🌲 aspyn
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
+
 > A local pipeline engine that gives your scripts a memory.
 
 aspyn is an unopinionated CLI for running scriptable pipelines locally. Define a sequence of steps in JSONC, point each one at a shell command or a built-in handler, and aspyn takes care of the rest — scheduling, state, change detection, crash recovery.
-
-![aspen_trees](https://i.imgur.com/GN0kraF.jpeg)
 
 ```jsonc
 // ~/.config/aspyn/gpu-tracker/config.jsonc
@@ -37,6 +37,8 @@ Every step is either a **shell string** or a **typed handler**. Steps feed their
 ---
 
 Still under active development. More docs coming soon.
+
+![aspen_trees](https://i.imgur.com/KzT8YVH.jpeg)
 
 ## License
 
