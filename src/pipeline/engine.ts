@@ -336,6 +336,10 @@ async function runPipelineOnce(
       if (pipelineTimedOut) {
         finalStatus = RUN_STATUS_ERROR;
         runError = pipelineTimeoutError(lastExecutedStep, pipelineTimeoutMs);
+        logger.error(
+          `Pipeline timed out after ${pipelineTimeoutMs}ms` +
+            (runError.step ? ` (last step: ${runError.step})` : ''),
+        );
         break;
       }
 
@@ -395,6 +399,7 @@ async function runPipelineOnce(
           message: `Unknown handler type "${stepDef.type}"`,
           step: stepDef.name,
         };
+        logger.error(`Step "${stepDef.name}" halted: unknown handler type "${stepDef.type}"`);
         appendEvent(name, {
           type: 'step_end',
           runId,
@@ -532,6 +537,10 @@ async function runPipelineOnce(
       if (pipelineTimedOut) {
         finalStatus = RUN_STATUS_ERROR;
         runError = pipelineTimeoutError(stepDef.name, pipelineTimeoutMs);
+        logger.error(
+          `Pipeline timed out after ${pipelineTimeoutMs}ms` +
+            (runError.step ? ` (last step: ${runError.step})` : ''),
+        );
         appendEvent(name, {
           type: 'step_end',
           runId,
@@ -610,6 +619,8 @@ async function runPipelineOnce(
             endedAt: nowIso(),
           });
 
+          logger.error(`Step "${stepDef.name}" failed: ${stepError.message}`);
+
           // Run step-level onError hook
           if (stepDef.onError) {
             await runOnErrorHook(
@@ -639,6 +650,7 @@ async function runPipelineOnce(
         };
         runError = { message: stepOutput.message, step: stepDef.name };
         finalStatus = RUN_STATUS_HALTED;
+        logger.error(`Step "${stepDef.name}" halted: ${stepOutput.message}`);
         appendEvent(name, {
           type: 'step_end',
           runId,
