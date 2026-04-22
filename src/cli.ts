@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import chalk from 'chalk';
 
 import {
@@ -98,6 +99,10 @@ function flagBool(args: ParsedArgs, name: string): boolean {
   return args.flags[name] !== undefined;
 }
 
+const _require = createRequire(import.meta.url);
+const PKG_VERSION: string =
+  (_require('../package.json') as { version: string }).version;
+
 // ── Usage ───────────────────────────────────────────────────────────
 
 const USAGE = `Usage: aspyn <command> [options]
@@ -115,6 +120,10 @@ Commands:
   aspyn log <name> [--action | --state]
   aspyn validate [--format json]
   aspyn init <name> [--manual | --no-interval]
+
+Options:
+  --version   Print version and exit
+  --help      Print this help and exit
 `;
 
 // ── Commands ────────────────────────────────────────────────────────
@@ -563,6 +572,11 @@ async function main(): Promise<number> {
   const args = parseArgs(raw);
   const cmd = args.positional.shift();
 
+  if (flagBool(args, 'version')) {
+    output.printHelp(`aspyn ${PKG_VERSION}`);
+    return EXIT_SUCCESS;
+  }
+
   if (!cmd || cmd === 'help' || flagBool(args, 'help')) {
     output.printHelp(USAGE);
     return EXIT_USAGE;
@@ -600,7 +614,7 @@ async function main(): Promise<number> {
     case 'init':
       return cmdInit(args);
     default:
-      output.printHelp(`Unknown command: ${cmd}\n${USAGE}`);
+      output.printHelp(`${chalk.red(`error:`)} '${cmd}' is not a known command. See usage below.\n\n${USAGE}`);
       return EXIT_USAGE;
   }
 }
