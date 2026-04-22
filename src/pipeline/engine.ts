@@ -255,9 +255,17 @@ async function runPipelineOnce(
   const effectiveFromIdx =
     opts.from !== undefined && opts.replaySideEffects ? 0 : fromIdx;
 
+  const fromName = allSteps[effectiveFromIdx]?.name ?? '?';
+  const untilName = allSteps[untilIdx]?.name ?? '?';
   logger.debug(
-    `Run plan: ${allSteps.length} steps, from=${effectiveFromIdx}, until=${untilIdx}, ` +
-    `dry=${!!opts.dry}, tracked=[${allSteps.filter((s, i) => isTracked(s, lookup(s.type), i, allSteps.length)).map(s => s.name).join(', ')}]`
+    `Run plan: ${allSteps.length} steps, ` +
+      `from="${fromName}" (${effectiveFromIdx + 1}), ` +
+      `until="${untilName}" (${untilIdx + 1}), ` +
+      `dry=${!!opts.dry}, ` +
+      `tracked=[${allSteps
+        .filter((s, i) => isTracked(s, lookup(s.type), i, allSteps.length))
+        .map((s) => s.name)
+        .join(', ')}]`
   );
 
   if (opts.from !== undefined && !opts.replaySideEffects && fromIdx > 0) {
@@ -345,7 +353,9 @@ async function runPipelineOnce(
 
       const stepDef = allSteps[i];
 
-      logger.debug(`Step ${i}/${untilIdx}: "${stepDef.name}" (type=${stepDef.type})`);
+      logger.debug(
+        `Step ${i + 1}/${allSteps.length}: "${stepDef.name}" (type=${stepDef.type})`
+      );
 
       if (skipUntilAfterCrash) {
         if (stepDef.name === crashResumeAfter) {

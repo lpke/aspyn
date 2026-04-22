@@ -117,7 +117,7 @@ Commands:
   aspyn state history <name> [--step <s>] [--since <d>] [--until <d>] [--status <s>] [--limit <n>] [--offset <n>] [--format json|table|tsv]
   aspyn state diff <name>
   aspyn state clear <name> [--step <s>] [--wipe-history]
-  aspyn log <name> [--action | --state]
+  aspyn log <name> [--action]
   aspyn validate [--format json]
   aspyn init <name> [--manual | --no-interval]
 
@@ -435,23 +435,11 @@ async function cmdStateClear(args: ParsedArgs): Promise<number> {
 async function cmdLog(args: ParsedArgs): Promise<number> {
   const name = args.positional[0];
   if (!name) {
-    output.printHelp('Usage: aspyn log <name> [--action | --state]');
+    output.printHelp('Usage: aspyn log <name> [--action]');
     return EXIT_USAGE;
   }
 
   const showAction = flagBool(args, 'action');
-  const showState = flagBool(args, 'state');
-
-  if (showAction && showState) {
-    output.printHelp('Cannot use --action and --state together');
-    return EXIT_USAGE;
-  }
-
-  if (showState) {
-    // Delegate to cmdStateHistory with the pipeline name
-    const histArgs: ParsedArgs = { positional: [name], flags: {} };
-    return cmdStateHistory(histArgs);
-  }
 
   let logPath: string;
   if (showAction) {
