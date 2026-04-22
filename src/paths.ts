@@ -38,12 +38,16 @@ export function pipelineConfigPath(name: string): string {
   return path.join(pipelineConfigDir(name), CONFIG_FILE);
 }
 
+export function pipelineDataDir(name: string): string {
+  return path.join(dataRoot(), name);
+}
+
 export function stateDir(name: string): string {
-  return path.join(dataRoot(), 'state', name);
+  return path.join(pipelineDataDir(name), 'state');
 }
 
 export function logsDir(name: string): string {
-  return path.join(dataRoot(), 'logs', name);
+  return path.join(pipelineDataDir(name), 'logs');
 }
 
 export function stateJsonPath(name: string): string {
