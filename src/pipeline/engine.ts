@@ -23,7 +23,7 @@ import { createEngine, type ExprEngine } from '../expr/engine.js';
 import { buildExprContext } from '../expr/context.js';
 import { resolveRuntime } from '../template/resolve.js';
 import { parseDurationMs } from '../duration.js';
-import { contextFilePath } from '../paths.js';
+import { contextFilePath, runLogPath } from '../paths.js';
 import { logger, initGlobalLogger } from '../logger.js';
 import { UsageError } from '../errors.js';
 import type {
@@ -254,6 +254,12 @@ async function runPipelineOnce(
   // --from: warn about skipped side-effect steps; --replay-side-effects overrides
   const effectiveFromIdx =
     opts.from !== undefined && opts.replaySideEffects ? 0 : fromIdx;
+
+  logger.debug(
+    `Run plan: ${allSteps.length} steps, from=${effectiveFromIdx}, until=${untilIdx}, ` +
+    `dry=${!!opts.dry}, tracked=[${allSteps.filter((s, i) => isTracked(s, lookup(s.type), i, allSteps.length)).map(s => s.name).join(', ')}]`
+  );
+
   if (opts.from !== undefined && !opts.replaySideEffects && fromIdx > 0) {
     for (let i = 0; i < fromIdx; i++) {
       const step = allSteps[i];
@@ -335,6 +341,8 @@ async function runPipelineOnce(
 
       const stepDef = allSteps[i];
 
+      logger.debug(`Step ${i}/${untilIdx}: "${stepDef.name}" (type=${stepDef.type})`);
+
       if (skipUntilAfterCrash) {
         if (stepDef.name === crashResumeAfter) {
           skipUntilAfterCrash = false;
@@ -352,6 +360,7 @@ async function runPipelineOnce(
           stepDef.when,
           buildExprContext(ctx),
         );
+        logger.debug(`[${stepDef.name}] when="${stepDef.when}" => ${!!whenResult}`);
         if (!whenResult) {
           appendEvent(name, {
             type: 'step_start',
@@ -425,6 +434,10 @@ async function runPipelineOnce(
         engine,
         buildExprContext(ctx),
       );
+      {
+        const resolvedInputStr = JSON.stringify(resolvedInput);
+        logger.debug(`[${stepDef.name}] Resolved input: ${resolvedInputStr.length > 2000 ? resolvedInputStr.slice(0, 2000) + '...(truncated)' : resolvedInputStr}`);
+      }
 
       // Step timeout: build combined AbortSignal (Issue 1)
       const stepTimeoutMs = parseDurationMs(
@@ -452,6 +465,7 @@ async function runPipelineOnce(
         if (ctx.__error != null) safeCtx.__error = ctx.__error;
         if (ctx.__failed != null) safeCtx.__failed = ctx.__failed;
         fs.writeFileSync(ctxPath, JSON.stringify(safeCtx));
+        logger.debug(`[${stepDef.name}] Context file: ${ctxPath}`);
       }
 
       // Step-level retry (independent of pipeline-level retry)
@@ -487,11 +501,15 @@ async function runPipelineOnce(
           );
           // Race the step (with its own timeout) against the pipeline timeout
           try {
-            stepOutput = await Promise.race([result, pipelineTimeoutPromise]);
+          stepOutput = await Promise.race([result, pipelineTimeoutPromise]);
           } finally {
             cancel();
           }
           stepError = undefined;
+          {
+            const outputStr = JSON.stringify(stepOutput);
+            logger.debug(`[${stepDef.name}] Output: ${outputStr.length > 2000 ? outputStr.slice(0, 2000) + '...(truncated)' : outputStr}`);
+          }
           break;
         } catch (err) {
           // Check if this was the pipeline timeout
@@ -663,6 +681,7 @@ async function runPipelineOnce(
         const changed =
           prevVal === undefined || !isDeepStrictEqual(prevVal, stepOutput);
         changedMap[stepDef.name] = changed;
+        logger.debug(`[${stepDef.name}] Tracked: changed=${changed}`);
         ctx.changed = { ...changedMap };
         lastValues[stepDef.name] = stepOutput;
       }
@@ -716,14 +735,17 @@ export async function runPipeline(
   const startedAt = nowIso();
   const startMs = Date.now();
 
-  // --verbose overrides log level
-  if (opts.verbose) {
-    initGlobalLogger({ level: 'debug' });
-  }
-
   // 1. Load configs
   const cfg = await loadPipelineConfig(name);
   const globalCfg = await loadGlobalConfig();
+
+  // Resolve effective log level and init logger
+  const effectiveLogLevel = opts.verbose ? 'debug' : (cfg.log ?? globalCfg.log ?? 'info');
+  initGlobalLogger({
+    level: effectiveLogLevel,
+    prefix: name,
+    logFile: runLogPath(name),
+  });
 
   // 2. Acquire lock
   const lock = await acquireLock(name);
@@ -733,6 +755,7 @@ export async function runPipeline(
 
   // Generate runId after lock acquisition (§17)
   const runId = generateRunId();
+  logger.debug(`Lock acquired for "${name}", runId=${runId}`);
 
   // Validate conflicting flags (initial check)
   if (opts.from !== undefined && opts.continueFromCrash) {
@@ -902,9 +925,12 @@ export async function runPipeline(
       lastValues: persistedLastValues,
     };
     await writeState(name, newState);
+    logger.debug(`State written: status=${newState.lastStatus}, runCount=${newState.runCount}, consecutiveFailures=${newState.consecutiveFailures}`);
 
     // Clear journal unconditionally on completion (§6)
     await clearJournal(name);
+
+    logger.info(`Run ${runId} completed: status=${r.status}, duration=${durationMs}ms`);
 
     return {
       status: r.status,

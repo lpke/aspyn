@@ -185,7 +185,7 @@ export async function startDaemon(opts?: { verbose?: boolean }): Promise<void> {
           for (let r = 0; r < timesToRun; r++) {
             if (shuttingDown) break;
             logger.info(`[${name}] Running pipeline${timesToRun > 1 ? ` (${r + 1}/${timesToRun})` : ''}`);
-            await runPipeline(name);
+            await runPipeline(name, opts?.verbose ? { verbose: true } : {});
           }
         } catch (err) {
           logger.error(`[${name}] Pipeline error: ${(err as Error).message}`);
