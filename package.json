@@ -1,6 +1,6 @@
 {
   "name": "@lpke/aspyn",
-  "version": "0.2.3-alpha",
+  "version": "0.2.4-alpha",
   "author": "luke@lpdev.io",
   "description": "A local pipeline engine that gives your scripts a memory.",
   "homepage": "https://github.com/lpke/aspyn#readme",
