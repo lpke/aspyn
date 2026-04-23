@@ -8,6 +8,12 @@ export interface Handler {
   name: string;
   sideEffectDefault?: boolean;
   run(ctx: HandlerContext, input: unknown): Promise<unknown>;
+  /**
+   * Called after a step failure to check whether the error was caused by a
+   * missing external dependency.  Return an install hint string to surface to
+   * the user, or `undefined` if the error is unrelated to missing deps.
+   */
+  dependencyHint?(errorMessage: string): string | undefined;
 }
 
 // ── Registry ────────────────────────────────────────────────────────

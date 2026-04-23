@@ -29,6 +29,7 @@ import {
 } from './config/loader.js';
 import { validateAll } from './config/validator.js';
 import { runPipeline } from './pipeline/engine.js';
+import { lookup } from './handlers/registry.js';
 import { readState, clearState } from './state/state.js';
 import { readHistory, clearHistory } from './state/history.js';
 import { startDaemon } from './daemon.js';
@@ -181,6 +182,25 @@ async function cmdRun(args: ParsedArgs): Promise<number> {
         result.status !== 'skipped'
       ) {
         anyError = true;
+      }
+
+      // After all pipeline logging: surface a dependency install hint when the
+      // failed step's handler recognises the error as a missing-dep problem.
+      // This is purely cosmetic — nothing is persisted to state or logs here.
+      if (result.error?.step && result.error.message) {
+        try {
+          const cfg = await loadPipelineConfig(name);
+          const failedStep = cfg.pipeline.find(
+            (s) => typeof s !== 'string' && (s as { name?: string }).name === result.error!.step,
+          ) as { type?: string } | undefined;
+          if (failedStep?.type) {
+            const handler = lookup(failedStep.type);
+            const hint = handler?.dependencyHint?.(result.error.message);
+            if (hint) output.printInstallHint(hint);
+          }
+        } catch {
+          // best-effort: never let hint lookup break the CLI exit path
+        }
       }
     } catch (err) {
       if (err instanceof UsageError) {

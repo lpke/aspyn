@@ -3,6 +3,14 @@ import { loadGlobalConfig } from '../config/loader.js';
 
 register({
   name: 'webpage',
+
+  dependencyHint(errorMessage: string): string | undefined {
+    if (errorMessage.includes('Playwright is not installed')) {
+      return 'The webpage handler requires Playwright. Install it with:\nnpm install -g playwright && npx playwright install';
+    }
+    return undefined;
+  },
+
   async run(ctx: HandlerContext, input: unknown) {
     const { url, waitFor, javascript } = input as {
       url: string;

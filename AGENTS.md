@@ -4,6 +4,7 @@ A local-first CLI for scriptable, config-driven pipelines. Pipelines are defined
 
 ## Conventions
 
+- **Project under active delevlopment.** Breaking changes are expected by end users. No extra effort needs to be made to avoid them.
 - **No barrel files.** Never create `index.ts` re-export files. Import directly from the file that defines what you need (e.g. `import type { PipelineConfig } from "./types/config.js"`).
 - **File extensions in imports.** Always use `.js` extensions in import paths (TypeScript + NodeNext).
 - **Types live in `src/types/`.** Pure type definitions — no runtime code. Runtime must not live inside `src/types/`.

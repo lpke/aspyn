@@ -174,6 +174,10 @@ function printHelp(text: string): void {
   write(bolded);
 }
 
+function printInstallHint(msg: string): void {
+  process.stderr.write('\n' + chalk.red(msg) + '\n');
+}
+
 // ── Export ───────────────────────────────────────────────────────────
 
 function markExternalOutput(): void {
@@ -263,4 +267,5 @@ export const output = {
   markExternalOutput,
   printStateHistory,
   printWatchHeader,
+  printInstallHint,
 };
