@@ -121,6 +121,7 @@ Commands:
   aspyn log <name> [--action]
   aspyn validate [--format json]
   aspyn init <name> [--manual | --no-interval]
+  aspyn help
 
 Options:
   --version   Print version and exit
@@ -587,7 +588,8 @@ async function main(): Promise<number> {
 
   if (!cmd || cmd === 'help' || flagBool(args, 'help')) {
     output.printHelp(USAGE);
-    return EXIT_USAGE;
+    if (!cmd && !flagBool(args, 'help')) return EXIT_USAGE;
+    return EXIT_SUCCESS;
   }
 
   switch (cmd) {
