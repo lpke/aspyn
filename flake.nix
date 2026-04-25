@@ -18,9 +18,12 @@
           packages = [
             pkgs.nodejs_24
             pkgs.pnpm
+            pkgs.playwright-driver.browsers
           ];
           shellHook = ''
-            # project-specific env here
+            export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+            export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=false
+            export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
             '';
         };
       });
