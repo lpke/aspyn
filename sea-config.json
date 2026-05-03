@@ -1,0 +1,7 @@
+{
+  "main": "dist/sea/main.cjs",
+  "output": "dist/sea/aspyn",
+  "disableExperimentalSEAWarning": true,
+  "useCodeCache": false,
+  "useSnapshot": false
+}

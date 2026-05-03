@@ -2,7 +2,7 @@
   description = "aspyn dev shell";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs = { self, nixpkgs }:
@@ -16,9 +16,13 @@
       devShells = forAllSystems ({ pkgs, ... }: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.nodejs_24
-            (pkgs.pnpm.override { nodejs = pkgs.nodejs_24; })
+            pkgs.nodejs_latest
+            (pkgs.pnpm.override { nodejs = pkgs.nodejs_latest; })
           ];
+
+          shellHook = ''
+            export PATH="$PWD/.flake.local/bin:$PATH"
+          '';
         };
       });
     };

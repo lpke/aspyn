@@ -13,21 +13,31 @@
   },
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "postbuild": "chmod +x dist/cli.js",
+    "prebuild": "rm -rf dist/npm",
+    "build": "pnpm build:types && pnpm build:js",
+    "build:types": "tsc --emitDeclarationOnly",
+    "build:js": "esbuild src/aspyn.ts --bundle --platform=node --format=esm --target=node22 --packages=bundle --minify --outfile=dist/npm/aspyn.js",
+    "prebuild:sea": "rm -f dist/sea/aspyn",
+    "build:sea": "pnpm build:sea:bundle && node --build-sea sea-config.json",
+    "build:sea:bundle": "esbuild src/aspyn.ts --bundle --platform=node --format=cjs --target=node22 --packages=bundle --minify --outfile=dist/sea/main.cjs",
+    "postbuild:sea": "chmod +x dist/sea/aspyn",
+    "postbuild": "chmod +x dist/npm/aspyn.js",
     "prepublishOnly": "pnpm build"
   },
   "files": [
-    "dist"
+    "dist/npm/aspyn.js",
+    "dist/npm/aspyn.d.ts"
   ],
   "bin": {
-    "aspyn": "dist/cli.js"
+    "aspyn": "dist/npm/aspyn.js"
   },
   "publishConfig": {
     "access": "public",
     "tag": "latest"
   },
   "devDependencies": {
+    "@types/node": "^22.19.17",
+    "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
@@ -40,7 +50,7 @@
     "jsonc-parser": "^3.3.1"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "keywords": [
     "pipeline",

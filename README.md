@@ -6,6 +6,42 @@
 
 > A minimal CLI for stateful shell pipelines.
 
-## Work in progress
+## ⚠️ Work in progress
 
-The original, heavier version can be found at [`aspyn-legacy`](https://github.com/lpke/aspyn-legacy).
+The original, experimental version can be found at [`aspyn-legacy`](https://github.com/lpke/aspyn-legacy).
+
+---
+
+## Build
+
+### Development testing
+
+To run the TypeScript entrypoint without needing to build:
+
+```sh
+pnpm exec tsx src/aspyn.ts
+```
+
+`pnpm exec` runs the command with the local `node_modules/.bin` in the PATH, so it can find `tsx` without a global install.
+
+### Node package
+
+```sh
+pnpm build
+```
+
+This creates `dist/npm/aspyn.js`, which is used by the npm package. Requires Node at runtime.
+
+### Standalone executable
+
+To build a Node SEA (Single Executable Application) for the current platform:
+
+```sh
+pnpm build:sea
+```
+
+This creates `dist/sea/aspyn`, a standalone executable that doesn't require Node installed on the user's machine.
+
+SEA builds are platform-specific, so build once per target OS/architecture.
+
+**NOTE:** Building the standalone executable requires **Node 25.5+** for `node --build-sea`.
