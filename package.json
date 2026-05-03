@@ -1,0 +1,63 @@
+{
+  "name": "@lpke/aspyn",
+  "version": "0.3.0-alpha",
+  "author": "luke@lpdev.io",
+  "description": "A minimal CLI for stateful shell pipelines.",
+  "homepage": "https://github.com/lpke/aspyn#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lpke/aspyn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lpke/aspyn/issues"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "chmod +x dist/cli.js",
+    "prepublishOnly": "pnpm build"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "aspyn": "dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": [
+    "pipeline",
+    "cli",
+    "shell",
+    "scripting",
+    "automation",
+    "runner",
+    "task-runner",
+    "stateful",
+    "history",
+    "change-detection",
+    "config-driven",
+    "jsonc",
+    "local-first",
+    "node",
+    "typescript"
+  ],
+  "license": "AGPL-3.0-only"
+}
