@@ -13,14 +13,13 @@
   },
   "type": "module",
   "scripts": {
+    "typecheck": "tsc",
     "prebuild": "rm -rf dist/npm",
-    "build": "pnpm build:types && pnpm build:js",
-    "build:types": "tsc --emitDeclarationOnly",
+    "build": "pnpm typecheck && pnpm build:types && pnpm build:js",
+    "build:types": "tsc -p tsconfig.build.json",
     "build:js": "esbuild src/aspyn.ts --bundle --platform=node --format=esm --target=node22 --packages=bundle --minify --outfile=dist/npm/aspyn.js",
-    "prebuild:sea": "rm -f dist/sea/aspyn",
-    "build:sea": "pnpm build:sea:bundle && node --build-sea sea-config.json",
+    "build:sea": "tsx scripts/build-sea.ts",
     "build:sea:bundle": "esbuild src/aspyn.ts --bundle --platform=node --format=cjs --target=node22 --packages=bundle --minify --outfile=dist/sea/main.cjs",
-    "postbuild:sea": "chmod +x dist/sea/aspyn",
     "format": "prettier --write .",
     "postbuild": "chmod +x dist/npm/aspyn.js",
     "prepublishOnly": "pnpm build"
