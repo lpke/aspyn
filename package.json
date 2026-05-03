@@ -21,6 +21,7 @@
     "build:sea": "pnpm build:sea:bundle && node --build-sea sea-config.json",
     "build:sea:bundle": "esbuild src/aspyn.ts --bundle --platform=node --format=cjs --target=node22 --packages=bundle --minify --outfile=dist/sea/main.cjs",
     "postbuild:sea": "chmod +x dist/sea/aspyn",
+    "format": "prettier --write .",
     "postbuild": "chmod +x dist/npm/aspyn.js",
     "prepublishOnly": "pnpm build"
   },
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^22.19.17",
     "esbuild": "^0.28.0",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   },
